@@ -1,0 +1,2 @@
+ALTER TABLE public.prescription_settings ADD COLUMN IF NOT EXISTS default_language text DEFAULT 'en' NOT NULL;
+ALTER TABLE public.hospitals ADD COLUMN IF NOT EXISTS frontdesk_language text DEFAULT 'en' NOT NULL;

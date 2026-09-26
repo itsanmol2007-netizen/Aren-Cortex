@@ -174,7 +174,10 @@ export function useConsultSession({ chart, data }: ConsultSessionArgs): ConsultS
   }, [visitId, data, selectedSymptoms, selectedFindings,
       selectedSymptomsWithIntensity, observableByLabel]);
 
+  const loadedKeyRef = useRef<string | null>(null);
+
   const loadPastVisits = useCallback((patientId: string, excludeVisitId?: string | null) => {
+    loadedKeyRef.current = `${patientId}:${excludeVisitId ?? ""}`;
     setPastVisitsLoading(true);
     let isCancelled = false;
 
@@ -212,12 +215,25 @@ export function useConsultSession({ chart, data }: ConsultSessionArgs): ConsultS
       });
   }, []);
 
+  // Guarantee past visits are loaded whenever a patient is in session (e.g. after draft restore, reload, or navigation)
+  useEffect(() => {
+    const pid = patient?.id;
+    if (!pid) {
+      loadedKeyRef.current = null;
+      return;
+    }
+    const key = `${pid}:${visitId ?? ""}`;
+    if (loadedKeyRef.current === key) return;
+    loadPastVisits(pid, visitId);
+  }, [patient?.id, visitId, loadPastVisits]);
+
   const reset = useCallback(() => {
     setPatient(null);
     setVisitId(null);
     setPastVisits([]);
     setRepeatRxBanner(null);
     setPatientModalOpen(true);
+    loadedKeyRef.current = null;
   }, []);
 
   return {

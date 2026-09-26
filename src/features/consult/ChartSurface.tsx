@@ -31,7 +31,7 @@
 // each one reinventing its own header.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
@@ -84,15 +84,50 @@ interface Props {
     maxWidth?: number;
 }
 
+/** How long the surface takes to leave; shorter than it takes to arrive. */
+const LEAVE_MS = 150;
+
 export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children, onEnterContent, preventDismiss, maxWidth }: Props) {
+    // Leaving is animated too: the X, the scrim and Escape play the exit
+    // first and only then tell the caller, so the surface sinks back rather
+    // than vanishing in one frame. (A caller closing it from outside still
+    // closes it at once: there is nothing on screen to explain the delay.)
+    const [leaving, setLeaving] = useState(false);
+    const leaveTimer = useRef<number | null>(null);
+    useEffect(() => {
+        if (expanded) setLeaving(false);
+        return () => { if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current); };
+    }, [expanded]);
+    const requestClose = useCallback(() => {
+        if (leaveTimer.current !== null) return;
+        const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        if (reduce) { onClose(); return; }
+        setLeaving(true);
+        leaveTimer.current = window.setTimeout(() => {
+            leaveTimer.current = null;
+            onClose();
+            // A caller that decided to stay open (a confirm it refused)
+            // gets its surface back rather than an invisible one.
+            setLeaving(false);
+        }, LEAVE_MS);
+    }, [onClose]);
+
     // Escape closes, matching every other overlay in this app — unless this
     // surface opted out (see `preventDismiss` above).
     useEffect(() => {
         if (!expanded || preventDismiss) return;
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        // Only the topmost surface answers: a phone-upload QR over the
+        // result sheet closes alone, not the sheet with it.
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            const all = document.querySelectorAll(".cs-chartmodal");
+            const mine = panelRef.current?.closest(".cs-chartmodal");
+            if (mine && all[all.length - 1] !== mine) return;
+            requestClose();
+        };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [expanded, onClose, preventDismiss]);
+    }, [expanded, requestClose, preventDismiss]);
 
     /**
      * Takes focus on open, hands it back on close — see `useOverlayFocus.ts`.
@@ -110,8 +145,8 @@ export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children
     if (!expanded) return <>{children}</>;
 
     return createPortal(
-        <div className="cs-chartmodal" role="dialog" aria-modal="true" aria-label={title}>
-            <div className="cs-chartmodal-scrim" onClick={preventDismiss ? undefined : onClose} />
+        <div className={`cs-chartmodal${leaving ? " is-leaving" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
+            <div className="cs-chartmodal-scrim" onClick={preventDismiss ? undefined : requestClose} />
             <div
                 className="cs-chartmodal-panel cx-kbd-surface"
                 ref={panelRef}
@@ -137,7 +172,7 @@ export function ChartSurface({ title, eyebrow, icon, expanded, onClose, children
                             <span className="cs-chartmodal-title">{title}</span>
                         </div>
                     </div>
-                    <button type="button" className="cs-chartmodal-close" onClick={onClose} aria-label="Close">
+                    <button type="button" className="cs-chartmodal-close" onClick={requestClose} aria-label="Close">
                         <X size={15} />
                     </button>
                 </div>

@@ -40,7 +40,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
     Activity, Building2, Clock, FlaskConical, Keyboard, Layers,
-    MonitorSmartphone, Pill, Printer, Shield, ShieldCheck, Sparkles,
+    MonitorSmartphone, Pill, Printer, RefreshCw, Shield, ShieldCheck, Sparkles,
     Stethoscope, User, Users,
 } from "lucide-react";
 import type { SidebarPage } from "../sidebar/SidebarNav";
@@ -186,6 +186,13 @@ export const SETTINGS_INDEX: SettingEntry[] = [
         description: "Every machine signed in to this account, and how to sign one out.",
         keywords: ["device", "session", "sign out", "logout", "laptop", "tablet", "shared", "computer", "revoke"],
         page: "settings", anchor: "set-card-devices", group: "Settings", icon: MonitorSmartphone,
+    },
+    {
+        id: "settings.sync",
+        label: "Background sync",
+        description: "Whether recent patients and the medicine catalogue download automatically for offline use.",
+        keywords: ["sync", "offline", "download", "data", "egress", "background", "prefetch", "catalogue", "cache"],
+        page: "settings", anchor: "set-card-sync", group: "Settings", icon: RefreshCw,
     },
     {
         id: "settings.health",

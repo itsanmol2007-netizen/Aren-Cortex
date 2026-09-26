@@ -3,6 +3,27 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MedicineInspector } from "./components/MedicineInspector";
+import { InterventionInspector, type SiteAssessment } from "./components/InterventionInspector";
+import {
+  fetchEarlierInterventions, fetchPlannedInterventions, type EarlierIntervention, type PlannedIntervention,
+} from "./lib/db/interventions";
+import { interventionFamilyFor, removableFamilies } from "./features/consult/interventionFamilies";
+import { followOnsFor, type FollowOn } from "./features/consult/followOns";
+import { fetchInterventionPrices, interventionCharges, type InterventionPrice } from "./lib/db/interventionPricing";
+import { AssessmentSiteModal } from "./components/AssessmentSiteModal";
+import { ExerciseSheet } from "./components/ExerciseSheet";
+import { fetchExerciseLibrary, setExerciseLibraryEntry, type ExerciseLibraryEntry } from "./lib/db/exerciseLibrary";
+import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
+import { siteSignalsOf } from "./lib/body/siteSignals";
+import { ongoingFrom, type OngoingAction, type OngoingItem, type OngoingLocal } from "./features/consult/ongoing";
+import { formatDue, formatLine as formatInterventionLine } from "./features/consult/interventionPlan";
+import { NV_CHECKS, NV_REGIONS, nvKey } from "./features/consult/NeurovascularCheck";
+import { dashText } from "./lib/clinicalText";
+import { queueInvestigationResult, queueStateEvent, recordInvestigationResult, recordStateEvent, STATUS_LABEL, type ConditionStatus, type PlanStatus } from "./lib/db/clinicalState";
+import { ResultSheet, type ResultDraft } from "./features/consult/ResultSheet";
+import { SendToLabSheet } from "./features/consult/SendToLabSheet";
+import type { AssessmentLine } from "./features/consult/assessmentPlan";
+import { searchIntents } from "./lib/db/synapse";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
 import { EditPatientDetailsModal } from "./components/EditPatientDetailsModal";
@@ -42,8 +63,9 @@ import { REGION_BY_KEY } from "./features/consult/examination";
 import { listBodySites } from "./lib/db/bodySites";
 import {
   DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
-  AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS,
+  AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS, storyNotes,
 } from "./features/consult/story";
+import { registerCustomAssessment } from "./features/consult/assessmentFamilies";
 import { type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
 import { MedicineAddSheet } from "./features/consult/MedicineAddSheet";
@@ -63,6 +85,7 @@ import { padToken } from "./features/frontdesk/utils";
 import type { TodayVisit } from "./lib/db";
 import type { Patient } from "./types";
 import { GeneralOpdInputs } from "./features/consult/GeneralOpdInputs";
+import { detailWorthyLabels } from "./features/consult/conditionDetail";
 import { PhysioInputs } from "./features/consult/PhysioInputs";
 import { SoapInputs } from "./features/consult/SoapInputs";
 import { DentalChartCard } from "./features/consult/DentalChartCard";
@@ -99,7 +122,7 @@ import { profileFor, type ChartKind } from "./features/synapse/specialtyProfile"
 import { useOnline } from "./features/frontdesk/operational/useOnline";
 import type { PersonalizedIntent } from "./lib/synapse/personalize";
 import {
-  type Observable, saveDoctorFreeTerm, requestNewComposition,
+  type Observable, saveDoctorFreeTerm, requestNewComposition, addClinicObservable,
   type DoctorFreeTermType,
   type PreferredLab, loadPreferredLabs, loadDefaultPreferredLab,
   fetchDoctorMeasurePrefs,
@@ -128,6 +151,28 @@ import { SignInPortal } from "./features/auth/SignInPortal";
 // today — kept rather than deleted so the NEXT destination this sidebar
 // grows has somewhere to land on day one instead of a blank screen.
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {};
+
+/**
+ * What a saved result was made of, read back from its text when the sheet's
+ * own record of it is gone (the consult was reopened): the lines of today's
+ * assessment it names, "No abnormality detected", and the rest as its note.
+ */
+function draftFromResult(text: string | null, lines: AssessmentLine[], diagnoses: string[]): ResultDraft | undefined {
+  if (!text) return undefined;
+  const parts = text.split("; ").map((p) => p.trim()).filter(Boolean);
+  const linked: string[] = [];
+  const plain: string[] = [];
+  const rest: string[] = [];
+  let normal = false;
+  for (const p of parts) {
+    const line = lines.find((l) => l.text === p);
+    if (line) linked.push(line.id);
+    else if (p === "No abnormality detected") normal = true;
+    else if (diagnoses.includes(p)) plain.push(p);
+    else if (p !== "Report attached") rest.push(p);
+  }
+  return { linked, owned: [], plain, normal, note: rest.join("; "), attachmentIds: [] };
+}
 
 function App() {
   // ★ The shape of this clinic — does somebody else do intake here? Read
@@ -466,7 +511,7 @@ function App() {
   // and, when it is chronic, a fact that survives the visit. Sits between the
   // session and the plan because it needs the patient at render time and the
   // plan needs it at render time. See useLongitudinalRecord.ts.
-  const { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition } = useLongitudinalRecord({
+  const { confirmCondition, unconfirmCondition, carryForwardFor, retireCondition, setConditionOnsetNote } = useLongitudinalRecord({
     data: synapse.data,
     chart,
     session,
@@ -562,6 +607,27 @@ function App() {
     [retireCondition, showToast]
   );
 
+  /**
+   * "Previous MI — since when?" — the write behind `CaseSheet`'s
+   * `OnsetPrompt`, for the curated conditions `conditionDetail.ts` names.
+   * Surfaced on failure like `handleRetireCarried` beside it: the doctor
+   * just typed this, and a silent failure would leave the chip claiming a
+   * date that never reached the record.
+   */
+  const handleSetOnsetNote = useCallback(
+    (label: string, note: string) => {
+      setConditionOnsetNote(label, note)
+        .catch((e) => showToast(`Could not save "${note}" for ${label}: ${e?.message ?? e}`));
+    },
+    [setConditionOnsetNote, showToast]
+  );
+
+  /** Which of this chart's labels are worth an optional "since when" — see conditionDetail.ts. */
+  const cardiacDetailWorthyLabels = useMemo(
+    () => detailWorthyLabels(synapse.data?.observables ?? []),
+    [synapse.data?.observables]
+  );
+
   const carePlan = useCarePlan({
     patientId: patient?.id ?? null,
     doctorId: identity.doctorId,
@@ -608,12 +674,18 @@ function App() {
   // The engine is a pure function over data already in memory, so ranking is
   // synchronous — the list re-ranks in the same frame the chip lands. The old
   // path posted every change to an edge function and waited 300 ms.
+  // Region signals for the engine, from SITE CONTEXT below. Held as state
+  // and set by an effect there, because the sites come from the plan, which
+  // is built from this hook's own result — a memo here would be a cycle.
+  const [engineSites, setEngineSites] = useState<string[]>([]);
   const intelligence = useConsultIntelligence({
     data: synapse.data,
     visitId,
     observableIds: chartObservableIds,
     observableSources: chart.observableSources,
     observableDurations: chart.observableDurations,
+    observableSites: chart.observableSites,
+    siteSignals: engineSites,
     vitals,
     ageYears,
     ageMonths,
@@ -632,6 +704,7 @@ function App() {
     intelligence,
     ledger,
     hospitalId: identity.hospitalId,
+    actorUserId: identity.userId,
     showToast,
     confirmCondition,
     unconfirmCondition,
@@ -642,14 +715,18 @@ function App() {
     followUpDays, setFollowUpDays,
     acceptedIntents, acceptedIntentIdSet, chosenBrands, deliberateBrands,
     searchedAccepts, acknowledgedIntents,
-    adviceLines, therapyLines, therapyNotes, exercisePlan, reviewAdvice, justAdded, unreadPrescribedWarnings,
+    adviceLines, interventionPlan, therapyNotes, exercisePlan, reviewAdvice, justAdded, unreadPrescribedWarnings,
     selectedMedicineId, setSelectedMedicineId, stagedMedicine, setStagedMedicine,
     pendingMedicine, setPendingMedicine, inspectorMedicine,
-    confirmPendingMedicine, confirmStagedMedicine,
+    confirmPendingMedicine, confirmStagedMedicine, medicineBilling,
+    pendingIntervention, confirmPendingIntervention, cancelPendingIntervention,
+    assessmentLines, pendingAssessment, confirmPendingAssessment, cancelPendingAssessment,
+    editAssessmentLine, addAnotherAssessmentSite, addAssessmentAt, addCustomAssessmentAt, updateAssessmentDetails,
     handleAcceptIntent, handleAcknowledge, handleChangeBrand, handlePinClinicBrand,
     updateMedicine, removeMedicine, removeTest, removeDiagnosis,
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice, removeAdviceLine,
-    removeTherapyLine, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
+    removeIntervention, addAnotherInterventionSite, performPlanned, openIntervention, openImagingAt,
+    pendingExercise, confirmPendingExercise, cancelPendingExercise, editExercise, removeAcceptedIntent, updateExercise, removeExercise, duplicateExerciseForSide,
     companionsFor, handleAddCompanion, dismissCompanion,
   } = plan;
 
@@ -900,6 +977,7 @@ function App() {
     isAnyModalOpen:
       patientModalOpen || isReviewOpen || activeConsultGuardOpen ||
       shortcutsOpen || !!pendingMedicine || !!stagedMedicine || !!selectedMedicineId ||
+      !!pendingIntervention || !!pendingAssessment || !!pendingExercise ||
       !!browse || !!brandSheet || openChart !== null || sidebarOpen ||
       !!activeVisit || !!trendDetail || !!trendVisit || carePlanSheetOpen || addMedicineQuery != null,
   });
@@ -992,7 +1070,7 @@ function App() {
     if (s.tolerance.trim()) lines.push(`Tolerance: ${s.tolerance.trim()}`);
     if (s.irritability) lines.push(`Irritability: ${IRRITABILITY_LABEL[s.irritability]}`);
     if (s.settling) lines.push(`Settles: ${SETTLING_LABEL[s.settling]}`);
-    if (s.note.trim()) lines.push(s.note.trim());
+    lines.push(...storyNotes(s));
     return lines;
   }, [visitStory.story]);
 
@@ -1362,6 +1440,27 @@ function App() {
     [hospitalProfile?.specialty_profile]
   );
 
+  /**
+   * `intelligence.byType`, with a referral to this facility's OWN specialty
+   * dropped — "Refer to Cardiology" ranked for a cardiologist is nonsense the
+   * engine has no way to know about; it ranks "Cardiology" as a referral
+   * target the same way for every specialty, because a chest-pain patient
+   * seeing a General OPD doctor genuinely should see it. Filtered here,
+   * at the one place that already knows both the ranked intents and the
+   * facility's own specialty, rather than teaching `useConsultIntelligence`
+   * (specialty-agnostic by design) or `SuggestionsCard` (generic across
+   * every facility) about this one case.
+   */
+  const filteredByType = useMemo(() => {
+    const referrals = intelligence.byType.referral;
+    if (!referrals?.length) return intelligence.byType;
+    const trimmed = referrals.filter(
+      (r) => r.label.trim().toLowerCase() !== specialty.label.trim().toLowerCase()
+    );
+    if (trimmed.length === referrals.length) return intelligence.byType;
+    return { ...intelligence.byType, referral: trimmed };
+  }, [intelligence.byType, specialty.label]);
+
   /** The doctor's override, narrowed to keys this specialty actually
    *  supports — it can only ever trim or reorder the baseline, never
    *  introduce a field the specialty profile doesn't already carry. Falls
@@ -1596,12 +1695,15 @@ function App() {
    * purpose (`knee`, `shoulder`, `neck`, `torso_lower`…) so this is a filter
    * rather than a second mapping table to keep in step.
    */
-  const [markedExam, setMarkedExam] = useState<{ regions: string[]; sides: Map<string, "left" | "right" | null> }>(
-    { regions: [], sides: new Map() }
-  );
+  const [markedExam, setMarkedExam] = useState<{
+    regions: string[];
+    sides: Map<string, "left" | "right" | null>;
+    /** every marked site, each side its own (a left and a right wrist are two) */
+    sites: { region: string; side: "left" | "right" | null }[];
+  }>({ regions: [], sides: new Map(), sites: [] });
   useEffect(() => {
     if (!visitId || !specialty.charts.includes("joints")) {
-      setMarkedExam({ regions: [], sides: new Map() });
+      setMarkedExam({ regions: [], sides: new Map(), sites: [] });
       return;
     }
     let cancelled = false;
@@ -1610,6 +1712,11 @@ function App() {
         if (cancelled) return;
         const regions: string[] = [];
         const sides = new Map<string, "left" | "right" | null>();
+        const all: { region: string; side: "left" | "right" | null }[] = [];
+        // Oldest first, so the summary reads in the order sites were marked.
+        for (const s of [...sites].reverse()) {
+          if (!all.some((x) => x.region === s.region && x.side === s.side)) all.push({ region: s.region, side: s.side });
+        }
         for (const s of sites) {
           if (!REGION_BY_KEY.has(s.region)) continue;
           if (!regions.includes(s.region)) regions.push(s.region);
@@ -1617,14 +1724,462 @@ function App() {
           // a second site, and the card's own switcher is how you reach it.
           if (!sides.has(s.region)) sides.set(s.region, s.side);
         }
-        setMarkedExam({ regions, sides });
+        setMarkedExam({ regions, sides, sites: all });
       })
-      .catch(() => { if (!cancelled) setMarkedExam({ regions: [], sides: new Map() }); });
+      .catch(() => { if (!cancelled) setMarkedExam({ regions: [], sides: new Map(), sites: [] }); });
     return () => { cancelled = true; };
   }, [visitId, openChart, specialty.charts]);
 
+  /**
+   * SITE CONTEXT (Phase 3) — every place established in this visit, in the
+   * order it became known: an assessment's site first ("Fracture — Left
+   * knee"), then an intervention's, then the joints marked on the body map.
+   * Every site-asking modal reads it: one place is pre-filled, two or more
+   * become "Which site?", none leaves the body map. An intervention adds its
+   * own site here but never invents a diagnosis for it.
+   */
+  const knownSites = useMemo<SiteRef[]>(() => {
+    const out: SiteRef[] = [];
+    const push = (x: SiteRef) => { if (!out.some((k) => sameSite(k, x))) out.push(x); };
+    // "Bilateral knee" is two places for anything done to ONE of them (an
+    // injection, a cast): offered as Left knee and Right knee, so it becomes
+    // a "Which site?" choice instead of pre-filling "Bilateral".
+    const add = (x: SiteRef | null) => {
+      if (!x) return;
+      if (x.side === "both") { push({ ...x, side: "left" }); push({ ...x, side: "right" }); }
+      else push(x);
+    };
+    assessmentLines.forEach((l) => add(l.site));
+    interventionPlan.forEach((l) => add(siteFromLabel(l.site)));
+    chart.findingSites.forEach((sites) => sites.forEach(add));
+    markedExam.regions.forEach((r) => add(siteFromRegionKey(r, markedExam.sides.get(r) ?? null)));
+    return out;
+  }, [assessmentLines, interventionPlan, chart.findingSites, markedExam]);
+
+  // The same places, told to the engine (see `engineSites` above).
+  useEffect(() => {
+    const next = siteSignalsOf(knownSites);
+    setEngineSites((prev) => (prev.join(",") === next.join(",") ? prev : next));
+  }, [knownSites]);
+
+  /**
+   * A local finding charted from the case sheet or command bar. One place
+   * known in this visit → it is found there ("Joint swelling / effusion ·
+   * Right knee"), changeable on the chip; two or more → the chip asks
+   * "Where?" at once; none → the chip offers "+ where?". Everything else
+   * toggles exactly as before.
+   */
+  const [askSiteLabel, setAskSiteLabel] = useState<string | null>(null);
+  const handleObservableToggleSited = useCallback((o: Observable, opts?: { deferSite?: boolean }) => {
+    const adding = !onChartSet.has(o.label);
+    // The command bar asks "where?" itself, in the box (its where-slot).
+    if (opts?.deferSite || !adding || !o.localizable || knownSites.length === 0) {
+      handleObservableToggle(o);
+      return;
+    }
+    if (knownSites.length === 1) {
+      chart.toggleObservableAt(o, knownSites[0]);
+      return;
+    }
+    handleObservableToggle(o);
+    setAskSiteLabel(o.label);
+  }, [onChartSet, knownSites, handleObservableToggle, chart]);
+
+  /** The command bar's where-slot: one place added to (or taken back from) a finding. */
+  const handleSiteChange = useCallback((finding: string, site: SiteRef, on: boolean) => {
+    const cur = chart.findingSites.get(finding) ?? [];
+    const next = on
+      ? (cur.some((s) => sameSite(s, site)) ? cur : [...cur, site])
+      : cur.filter((s) => !sameSite(s, site));
+    chart.setFindingSites(finding, next);
+  }, [chart]);
+
+  /** This visit's placed assessments — what an intervention at the same
+   *  site treats (a reduction there defaults to "Fracture"). */
+  const siteAssessments = useMemo<SiteAssessment[]>(
+    () => assessmentLines.flatMap((l) => (l.site ? [{ site: l.site, family: l.family, text: l.text }] : [])),
+    [assessmentLines],
+  );
+
+  /** This patient's earlier casts, sutures, dressings… — read only when a
+   *  removal or dressing change opens, so it can point back at one. */
+  const [earlierInterventions, setEarlierInterventions] = useState<EarlierIntervention[]>([]);
+  useEffect(() => {
+    const fam = pendingIntervention ? interventionFamilyFor(pendingIntervention.payload.label) : null;
+    const pid = patient?.id;
+    if (!fam || removableFamilies(fam.key).length === 0 || !pid) return;
+    setEarlierInterventions([]);
+    let cancelled = false;
+    fetchEarlierInterventions(pid).then((rows) => { if (!cancelled) setEarlierInterventions(rows); });
+    return () => { cancelled = true; };
+  }, [pendingIntervention, patient?.id]);
+
+  /** What earlier visits planned for this patient and nobody has done yet
+   *  ("Suture removal, due 3 Oct") — offered on the plan rail to perform. */
+  const [plannedEarlier, setPlannedEarlier] = useState<PlannedIntervention[]>([]);
+  useEffect(() => {
+    setPlannedEarlier([]);
+    const pid = patient?.id;
+    if (!pid) return;
+    let cancelled = false;
+    fetchPlannedInterventions(pid).then((rows) => { if (!cancelled) setPlannedEarlier(rows); });
+    return () => { cancelled = true; };
+  }, [patient?.id, visitId]);
+
+  /**
+   * A follow-on chip was clicked (followOns.ts). Catalogue items open their
+   * own modal at the line's site; plain text lands the way a free-text term
+   * does. Never auto-added — this runs only on the doctor's click.
+   */
+  const handleFollowOn = useCallback((f: FollowOn) => {
+    const a = f.action;
+    const payloadFor = (type: "modality" | "test", label: string): AcceptPayload | null => {
+      const ruleset = synapse.data?.ruleset;
+      if (!ruleset) return null;
+      for (const [, i] of ruleset.intents) {
+        if (i.type === type && i.label.toLowerCase() === label.toLowerCase()) {
+          return { intentId: i.id, type, label: i.label, refTable: i.refTable, refId: i.refId, medicine: null, viaSearch: false, overridden: false };
+        }
+      }
+      return null;
+    };
+    switch (a.kind) {
+      case "intervention": {
+        const payload = payloadFor("modality", a.label)
+          ?? { intentId: 0, type: "modality", label: a.label, refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false };
+        openIntervention(payload, { site: a.site, status: a.status, dueDays: a.dueDays, details: a.details });
+        break;
+      }
+      case "imaging": {
+        const payload = payloadFor("test", a.label);
+        if (payload) openImagingAt(payload, a.site);
+        else addFreeTest(a.site ? `${a.label} - ${clinicalSiteLabel(a.site)}` : a.label);
+        break;
+      }
+      case "test": addFreeTest(a.text); break;
+      case "advice": addFreeAdvice(a.text); break;
+      case "referral": addFreeReferral(a.text); break;
+      case "followUp": setFollowUpDays(a.days); break;
+      case "medicine": setAddMedicineQuery(a.query); break;
+    }
+  }, [synapse.data?.ruleset, openIntervention, openImagingAt, addFreeTest, addFreeAdvice, addFreeReferral, setFollowUpDays]);
+
+  // ── ONGOING CARE LIFECYCLE (2026-09-25) ────────────────────────────────
+  // What this visit has done about earlier visits' casts, plans and
+  // conditions. States (healed, deferred…) are written at once as events
+  // (clinical_state_events) and mirrored here so the card updates in the
+  // same frame; a removal or a planned item carried out is part of today's
+  // plan, read straight from it.
+  const [ongoingStates, setOngoingStates] = useState<Pick<OngoingLocal, "conditions" | "plans">>(
+    () => ({ conditions: new Map(), plans: new Map() }),
+  );
+  /** investigation results recorded during this visit (order id → text) */
+  const [resultsToday, setResultsToday] = useState<Map<string, string>>(() => new Map());
+  /** the awaited investigation whose result sheet is open */
+  const [resultSheetFor, setResultSheetFor] = useState<OngoingItem | null>(null);
+  /** "Send to lab" (Review): open, and the lab it went to this visit */
+  const [labSheetOpen, setLabSheetOpen] = useState(false);
+  const [labSentTo, setLabSentTo] = useState<string | null>(null);
+  /** what each result recorded this visit was made of, so it reopens for editing */
+  const [resultDrafts, setResultDrafts] = useState<Map<string, ResultDraft>>(() => new Map());
+  const findResultAssessments = useCallback(
+    (q: string) => searchIntents({ query: q, types: ["finding"], limit: 24 }).then((r) => r.hits),
+    [],
+  );
+  /** whether the last visit has been carried forward onto today's sheet */
+  const [continued, setContinued] = useState(false);
+  useEffect(() => {
+    setOngoingStates({ conditions: new Map(), plans: new Map() });
+    setResultsToday(new Map());
+    setResultDrafts(new Map());
+    setResultSheetFor(null);
+    setLabSheetOpen(false);
+    setLabSentTo(null);
+    setContinued(false);
+  }, [patient?.id]);
+  // This visit's marks on the band (states, results) kept per visit on this
+  // device, so a reload before the write queue has drained (no connection,
+  // or a crash) still shows them. Restored once per visit, then mirrored.
+  const ongoingRestoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visitId || ongoingRestoredFor.current === visitId) return;
+    ongoingRestoredFor.current = visitId;
+    try {
+      const raw = localStorage.getItem(`aren-cortex:ongoing:${visitId}`);
+      if (!raw) return;
+      const m = JSON.parse(raw) as {
+        at: number;
+        conditions: [string, ConditionStatus][];
+        plans: [string, { status: PlanStatus | "active"; dueDate: string | null }][];
+        results: [string, string][];
+      };
+      if (Date.now() - m.at > 3 * 24 * 60 * 60 * 1000) return;
+      setOngoingStates({ conditions: new Map(m.conditions), plans: new Map(m.plans) });
+      setResultsToday((cur) => new Map([...m.results, ...cur]));
+    } catch { /* a bad entry is just not restored */ }
+  }, [visitId]);
+  useEffect(() => {
+    if (!visitId || ongoingRestoredFor.current !== visitId) return;
+    try {
+      localStorage.setItem(`aren-cortex:ongoing:${visitId}`, JSON.stringify({
+        at: Date.now(),
+        conditions: [...ongoingStates.conditions],
+        plans: [...ongoingStates.plans],
+        results: [...resultsToday],
+      }));
+    } catch { /* storage full or blocked: the queue still carries the writes */ }
+  }, [visitId, ongoingStates, resultsToday]);
+  // A result read at THIS visit and saved already (the consult was reopened,
+  // or the page reloaded) is still this visit's: it stays on the Ongoing
+  // card as recorded today, with Edit result, rather than vanishing because
+  // the order now reads as resulted.
+  useEffect(() => {
+    if (!visitId) return;
+    const mine: [string, string][] = [];
+    for (const v of meaningfulPastVisits) {
+      for (const o of v.orders ?? []) {
+        if (o.resultText && o.resultVisitId === visitId) mine.push([o.id, o.resultText]);
+      }
+    }
+    if (!mine.length) return;
+    setResultsToday((cur) => {
+      if (mine.every(([id]) => cur.has(id))) return cur;
+      const next = new Map(cur);
+      for (const [id, text] of mine) if (!next.has(id)) next.set(id, text);
+      return next;
+    });
+  }, [meaningfulPastVisits, visitId]);
+  const ongoingLocal = useMemo<OngoingLocal>(() => ({
+    ...ongoingStates,
+    results: resultsToday,
+    removedToday: new Set(interventionPlan.map((l) => l.removesId).filter(Boolean) as string[]),
+    fulfilledToday: new Set(interventionPlan.map((l) => l.fulfilsId).filter(Boolean) as string[]),
+  }), [ongoingStates, interventionPlan, resultsToday]);
+
+  // ── What the printed prescription (and so the WhatsApp page) carries
+  // beyond the chart: results read today, procedures split into done and
+  // planned, what continues from earlier visits, and a neurovascular check.
+  const printResults = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const v of meaningfulPastVisits) for (const o of v.orders ?? []) names.set(o.id, o.name);
+    return [...resultsToday].map(([id, text]) => ({ name: dashText(names.get(id) ?? "Investigation"), text }));
+  }, [resultsToday, meaningfulPastVisits]);
+
+  const printProcedures = useMemo(() => interventionPlan.map((l) => ({
+    // formatLine tags a planned line "[planned, due …]"; the print gives
+    // planned lines their own heading and due date instead.
+    text: l.text ? (l.notes.trim() ? `${l.text} (${l.notes.trim()})` : l.text) : formatInterventionLine(l),
+    status: (l.status ?? "performed") as "performed" | "planned",
+    due: l.dueDate ? formatDue(l.dueDate) : null,
+  })), [interventionPlan]);
+
+  const printContinuing = useMemo(() => {
+    const out: string[] = [];
+    for (const it of ongoingFrom(meaningfulPastVisits, ongoingLocal)) {
+      const what = `${it.title}${it.site ? ` - ${it.site}` : ""}`;
+      if (it.kind === "in-place" && !it.today) out.push(`${what}: keep on, ${it.status.toLowerCase()}`);
+      else if (it.kind === "condition" && it.state) out.push(`${what}: ${STATUS_LABEL[it.state].toLowerCase()}`);
+    }
+    return out;
+  }, [meaningfulPastVisits, ongoingLocal]);
+
+  const handleOngoingAction = useCallback((item: OngoingItem, action: OngoingAction) => {
+    const p = item.procedure;
+    const pid = patient?.id;
+    if (action.type === "remove" && p) {
+      const ruleset = synapse.data?.ruleset;
+      let payload: AcceptPayload | null = null;
+      if (ruleset) {
+        for (const [, i] of ruleset.intents) {
+          if (i.type === "modality" && i.label.toLowerCase() === "cast / splint / suture removal") {
+            payload = { intentId: i.id, type: "modality", label: i.label, refTable: i.refTable, refId: i.refId, medicine: null, viaSearch: false, overridden: false };
+            break;
+          }
+        }
+      }
+      openIntervention(
+        payload ?? { intentId: 0, type: "modality", label: "Cast / splint / suture removal", refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false },
+        { site: item.siteRef, removesId: p.id },
+      );
+      return;
+    }
+    if (action.type === "do" && p) {
+      performPlanned({ id: p.id, intentId: p.intentId ?? null, label: p.label, siteRef: p.site, details: p.details ?? {} });
+      return;
+    }
+    if (action.type === "open-result") {
+      setResultSheetFor(item);
+      return;
+    }
+    if (action.type === "result" && item.order) {
+      const order = item.order;
+      setResultsToday((cur) => new Map(cur).set(order.id, action.text));
+      (identity.isReal
+        ? queueInvestigationResult(order.id, action.text, visitId, { hospitalId: identity.hospitalId, doctorId: identity.doctorId })
+        : recordInvestigationResult(order.id, action.text, visitId)
+      ).catch((e) => {
+        setResultsToday((cur) => { const n = new Map(cur); n.delete(order.id); return n; });
+        showToast(`Could not save the result: ${e?.message ?? e}`);
+      });
+      return;
+    }
+    if (!pid) return;
+    // A state: shown at once, written behind; a failed write is undone and said.
+    const write = (
+      apply: (s: Pick<OngoingLocal, "conditions" | "plans">) => Pick<OngoingLocal, "conditions" | "plans">,
+      event: Parameters<typeof recordStateEvent>[0],
+      what: string,
+    ) => {
+      let before: Pick<OngoingLocal, "conditions" | "plans"> | null = null;
+      setOngoingStates((cur) => { before = cur; return apply(cur); });
+      (identity.isReal
+        ? queueStateEvent(event, { hospitalId: identity.hospitalId, doctorId: identity.doctorId })
+        : recordStateEvent(event)
+      ).catch((e) => {
+        if (before) setOngoingStates(before);
+        showToast(`Could not save ${what}: ${e?.message ?? e}`);
+      });
+    };
+    if (action.type === "status" && item.assessmentId) {
+      const id = item.assessmentId;
+      write(
+        (cur) => ({ ...cur, conditions: new Map(cur.conditions).set(id, action.status) }),
+        { patientId: pid, visitId, assessmentId: id, status: action.status },
+        "the status",
+      );
+      return;
+    }
+    if (!p) return;
+    if (action.type === "defer") {
+      const base = p.planState?.status === "deferred" && p.planState.dueDate ? p.planState.dueDate : p.dueDate;
+      const from = base && new Date(base) > new Date() ? new Date(base) : new Date();
+      from.setDate(from.getDate() + action.days);
+      const due = from.toISOString().slice(0, 10);
+      write(
+        (cur) => ({ ...cur, plans: new Map(cur.plans).set(p.id, { status: "deferred", dueDate: due }) }),
+        { patientId: pid, visitId, interventionId: p.id, status: "deferred", dueDate: due },
+        "the new date",
+      );
+    } else if (action.type === "cancel") {
+      write(
+        (cur) => ({ ...cur, plans: new Map(cur.plans).set(p.id, { status: "cancelled", dueDate: null }) }),
+        { patientId: pid, visitId, interventionId: p.id, status: "cancelled" },
+        "the cancellation",
+      );
+    } else if (action.type === "restore") {
+      write(
+        (cur) => ({ ...cur, plans: new Map(cur.plans).set(p.id, { status: "active", dueDate: null }) }),
+        { patientId: pid, visitId, interventionId: p.id, status: "active" },
+        "the change",
+      );
+    }
+  }, [patient?.id, visitId, synapse.data?.ruleset, openIntervention, performPlanned, showToast]);
+
+  /**
+   * Follow-up → Continue: the last visit's complaints and examination
+   * findings come onto today's sheet as CARRIED chips (the dashed "from last
+   * time" look — confirm or remove each), each local finding at the place it
+   * was found. Rebuilt from the saved record, not copied from a screen.
+   */
+  const handleContinue = useCallback(() => {
+    const last = meaningfulPastVisits[0];
+    if (!last) return;
+    const byLower = new Map(observables.map((o) => [o.label.toLowerCase(), o]));
+    const resolve = (text: string): { o: typeof observables[number]; site: SiteRef | null } | null => {
+      const whole = byLower.get(text.toLowerCase());
+      if (whole) return { o: whole, site: null };
+      const i = text.lastIndexOf(" - ");
+      if (i < 0) return null;
+      const o = byLower.get(text.slice(0, i).toLowerCase());
+      if (!o) return null;
+      // "Right wrist, Left wrist" — the first place; the others are rare and
+      // can be ticked on the chip.
+      const site = siteFromLabel(text.slice(i + 3).split(",")[0].trim());
+      return { o, site };
+    };
+    const picked = [...last.symptoms, ...(last.sitedFindings?.length ? last.sitedFindings : last.findings.map((f) => f.name))]
+      .map(resolve)
+      .filter((x): x is NonNullable<ReturnType<typeof resolve>> => !!x);
+    if (!picked.length) { setContinued(true); return; }
+    chart.seedIntake(picked.map(({ o }) => ({ label: o.label, kind: o.kind, durationDays: null, origin: "carried" as const })));
+    for (const { o, site } of picked) if (site) chart.setFindingSites(o.label, [site]);
+    setContinued(true);
+    showToast(`Carried forward from ${new Date(last.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}: ${picked.length} item${picked.length === 1 ? "" : "s"}`);
+  }, [meaningfulPastVisits, observables, chart, showToast]);
+
+  /** This clinic's usual dose per exercise (Practice → Exercise Library) —
+   *  where the exercise sheet starts. */
+  const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryEntry[]>([]);
+  useEffect(() => {
+    if (!identity.hospitalId) return;
+    let cancelled = false;
+    fetchExerciseLibrary(identity.hospitalId)
+      .then((rows) => { if (!cancelled) setExerciseLibrary(rows); })
+      .catch(() => { /* offline or none: the sheet starts from doseFor */ });
+    return () => { cancelled = true; };
+  }, [identity.hospitalId]);
+
+  /** What this clinic charges for interventions (Phase 7) — empty = off. */
+  const [interventionPrices, setInterventionPrices] = useState<InterventionPrice[]>([]);
+  useEffect(() => {
+    if (!identity.hospitalId) return;
+    let cancelled = false;
+    fetchInterventionPrices(identity.hospitalId).then((rows) => { if (!cancelled) setInterventionPrices(rows); });
+    return () => { cancelled = true; };
+  }, [identity.hospitalId, isReviewOpen]);
+
   /** Phase 3 examination state — layer 1, beside the story. */
-  const examination = useExamination(visitId);
+  const examination = useExamination(
+    visitId,
+    identity.isReal ? { hospitalId: identity.hospitalId, doctorId: identity.doctorId } : null,
+  );
+
+  // The lab order's "why" and "what happened", from today's consult only:
+  // how it happened (with when), the working assessment; then the
+  // complaints and findings with their places, pain and any neurovascular
+  // abnormality. Never past history, medicines or billing.
+  const labIndication = useMemo(() => {
+    const s = visitStory.story;
+    const how = s.mechanism.trim();
+    const when = s.durationText?.trim() || (s.duration ? DURATION_LABEL[s.duration] : "");
+    const mech = how ? `${how}${when ? `, ${when} ago` : ""}` : "";
+    // Free story typed into the bar ("Fell from bike yesterday") says how it
+    // happened when the structured mechanism does not; otherwise it is context.
+    const notes = storyNotes(s).join(", ");
+    return [mech || notes, ...diagnoses].filter(Boolean).join("; ");
+  }, [visitStory.story, diagnoses]);
+
+  const printNeuro = useMemo(() => {
+    const out: { text: string; abnormal: boolean }[] = [];
+    for (const m of markedExam.sites) {
+      if (!NV_REGIONS.has(m.region)) continue;
+      const vals = NV_CHECKS.map((c) => examination.getText(nvKey(c.key, m.region), m.side));
+      if (vals.every((v) => !v)) continue;
+      const ref = siteFromRegionKey(m.region, m.side);
+      const where = ref ? clinicalSiteLabel(ref) : m.region;
+      const off = NV_CHECKS
+        .map((c, i) => (vals[i] && vals[i] !== c.normal ? `${c.label.toLowerCase()} ${vals[i]!.toLowerCase()}` : null))
+        .filter(Boolean);
+      out.push(off.length
+        ? { text: `Neurovascular: ${off.join(", ")} - ${where}`, abnormal: true }
+        : { text: `Neurovascular intact - ${where}`, abnormal: false });
+    }
+    return out;
+  }, [markedExam.sites, examination]);
+
+  const labContext = useMemo(() => {
+    const pain = Number((vitals as Record<string, unknown> | null)?.painVas);
+    const s = visitStory.story;
+    return [
+      ...(s.mechanism.trim() ? storyNotes(s) : []),
+      ...chart.symptomsForRecord,
+      ...chart.findingsForRecord,
+      ...(Number.isFinite(pain) && pain > 0 ? [`Pain ${pain}/10`] : []),
+      ...printNeuro.filter((n) => n.abnormal).map((n) => n.text),
+    ].join("; ");
+  }, [visitStory.story, chart.symptomsForRecord, chart.findingsForRecord, vitals, printNeuro]);
+
+
 
   /**
    * The doctor's pins — the heart on a recommendation row.
@@ -1685,6 +2240,67 @@ function App() {
     addFreeDiagnosis, addFreeTest, addFreeReferral, addFreeAdvice,
     identity, intelligence.result, acceptedIntentIdSet, synapse,
   ]);
+
+  /**
+   * The body map's "not in the list" (2026-09-27). A finding or complaint
+   * becomes the clinic's own catalogue term (so it saves, prints and shows
+   * up in search like any other) and is recorded at the site; an assessment
+   * is recorded at the site and remembered as this doctor's own term, the
+   * same memory the Assessment card's free text uses. A new term needs the
+   * server, so offline says so rather than pretending.
+   */
+  const handleAddCustomFindingAt = useCallback(
+    async (label: string, kind: "symptom" | "finding", site: SiteRef): Promise<string | null> => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return "You are offline. A new term needs a connection; add it to the story for now.";
+      }
+      try {
+        const o = await addClinicObservable({
+          label, kind, domain: specialty.preferDomain ?? null, system: specialty.preferSystems?.[0] ?? null,
+        });
+        synapse.addObservable(o);
+        const already = caseSheetEntries.find((e) => e.label === o.label)?.sites?.some((st) => sameSite(st, site));
+        if (!already) {
+          if (o.localizable) chart.toggleObservableAt(o, site);
+          else handleObservableToggle(o);
+        }
+        return null;
+      } catch (e) {
+        console.warn("add_clinic_observable:", e);
+        return "Could not add that term. Check the connection and try again.";
+      }
+    },
+    [specialty.preferDomain, specialty.preferSystems, synapse, caseSheetEntries, chart, handleObservableToggle],
+  );
+
+  const handleAddCustomAssessmentAt = useCallback((label: string, site: SiteRef): string | null => {
+    const id = addCustomAssessmentAt(label, site);
+    if (id && identity.isReal) {
+      saveDoctorFreeTerm({
+        doctorId: identity.doctorId,
+        hospitalId: identity.hospitalId,
+        label: label.trim(),
+        type: "finding",
+        signalIds: (intelligence.result?.activeSignals ?? []).map((s) => s.signalId),
+        acceptedIntentIds: [...acceptedIntentIdSet],
+      })
+        .then(() => synapse.reload())
+        .catch((e) => console.warn("doctor_free_terms save (non-fatal):", e));
+    }
+    return id;
+  }, [addCustomAssessmentAt, identity, intelligence.result, acceptedIntentIdSet, synapse]);
+
+  /** This doctor's own assessments, offered by the body map's search. */
+  const ownAssessmentTerms = useMemo(
+    () => (synapse.data?.freeTerms ?? []).filter((t) => t.type === "finding").map((t) => t.label),
+    [synapse.data?.freeTerms],
+  );
+  // A remembered or restored assessment of the doctor's own resolves to a
+  // site-only family, so its line keeps working after a reload.
+  useEffect(() => {
+    for (const t of ownAssessmentTerms) registerCustomAssessment(t);
+    for (const l of assessmentLines) if (l.intentId === null) registerCustomAssessment(l.label);
+  }, [ownAssessmentTerms, assessmentLines]);
 
   /**
    * Which measurements the chart has just made worth taking.
@@ -1944,6 +2560,7 @@ function App() {
              Cortex clinic opens the patient form. */
           onStartConsult={handleSidebarConsult}
           onNavigate={handleSidebarNavigate}
+          specialty={specialty}
           onViewPatient={(patientId, name) => {
             handleSidebarNavigate("patients");
             setPatientRecordSeed({ id: patientId, name });
@@ -2095,6 +2712,10 @@ function App() {
             onOpenTrend={setTrendDetail}
             onEditCarePlan={() => setCarePlanSheetOpen(true)}
             onStartCarePlan={() => setCarePlanSheetOpen(true)}
+            ongoingLocal={ongoingLocal}
+            onOngoingAction={handleOngoingAction}
+            onContinue={handleContinue}
+            continued={continued}
           />
           <main className="cs-page">
             {/* Context first, but not at the same visual weight as the three
@@ -2125,11 +2746,18 @@ function App() {
               {usesPhysioInputs ? (
                 <PhysioInputs
                   observables={observables}
+                  preferSystems={specialty.preferSystems}
+                  preferDomain={specialty.preferDomain}
                   onChartSet={onChartSet}
-                  onObservableToggle={handleObservableToggle}
+                  onObservableToggle={handleObservableToggleSited}
                   caseSheetEntries={caseSheetEntries}
                   onCaseSheetRemove={handleCaseSheetRemove}
                   onRetireCarried={handleRetireCarried}
+                  knownSites={knownSites}
+                  onSetFindingSites={chart.setFindingSites}
+                  askSiteLabel={askSiteLabel}
+                  onAskSiteHandled={() => setAskSiteLabel(null)}
+                  onSiteChange={handleSiteChange}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}
                   relatedFindings={relatedFindings}
@@ -2156,17 +2784,22 @@ function App() {
                   onAddGoal={visitStory.addGoal}
                   onRetireGoal={visitStory.retireGoal}
                   examination={examination}
-                  markedRegions={markedExam.regions}
-                  markedSides={markedExam.sides}
+                  markedSites={markedExam.sites}
+                  siteAssessments={assessmentLines}
                   onOpenBodyMap={() => setOpenChart("joints")}
                 />
               ) : usesCaseSheet ? (
                 <GeneralOpdInputs
                   observables={observables}
                   onChartSet={onChartSet}
-                  onObservableToggle={handleObservableToggle}
+                  onObservableToggle={handleObservableToggleSited}
                   caseSheetEntries={caseSheetEntries}
                   onCaseSheetRemove={handleCaseSheetRemove}
+                  knownSites={knownSites}
+                  onSetFindingSites={chart.setFindingSites}
+                  askSiteLabel={askSiteLabel}
+                  onAskSiteHandled={() => setAskSiteLabel(null)}
+                  onSiteChange={handleSiteChange}
                   /* "How long?" — asked here and NOT in PhysioInputs above,
                      because physiotherapy's Story composer already owns that
                      question (`story.ts`'s Duration dimension) and two boxes
@@ -2175,6 +2808,8 @@ function App() {
                   symptomDurations={chart.symptomDurations}
                   onSetSymptomDuration={chart.setSymptomDuration}
                   onRetireCarried={handleRetireCarried}
+                  detailWorthyLabels={cardiacDetailWorthyLabels}
+                  onSetOnsetNote={handleSetOnsetNote}
                   intensities={selectedSymptomsWithIntensity}
                   onIntensityChange={handleIntensityChange}
                   relatedFindings={relatedFindings}
@@ -2191,6 +2826,8 @@ function App() {
                   disabled={!patient}
                   searchRef={chartSearchRef}
                   measurementsRef={measurementsRef}
+                  story={visitStory.story}
+                  onStoryChange={visitStory.setStory}
                   templates={templates}
                   onApplyTemplate={applyTemplate}
                 />
@@ -2257,6 +2894,9 @@ function App() {
                 hasChart={intelligence.hasInput}
                 diagnoses={diagnoses}
                 onRemoveDiagnosis={removeDiagnosis}
+                assessmentLines={assessmentLines}
+                onEditAssessmentLine={editAssessmentLine}
+                onAddAssessmentSite={addAnotherAssessmentSite}
                 onRemove={removeAcceptedIntent}
                 /* §4, 2026-08-24 — the Assessment free-text fallback. */
                 onAddFreeText={(label) => handleAddFreeTerm(label, "finding")}
@@ -2317,7 +2957,7 @@ function App() {
                       // unbounded list, the same mechanism that column
                       // already uses.
                       capped={4}
-                      byType={intelligence.byType}
+                      byType={filteredByType}
                       topOfType={topOfType}
                       thinkingKey={intelligence.thinkingKey}
                       // Investigations sits BESIDE Assessment but is a step after it in
@@ -2410,6 +3050,7 @@ function App() {
                     disabled={!patient}
                     onAccept={handleAcceptIntent}
                     onUpdate={updateExercise}
+                    onEdit={editExercise}
                     onRemove={removeExercise}
                     onDuplicateForSide={duplicateExerciseForSide}
                     searchRef={synapseSearchRef}
@@ -2432,7 +3073,7 @@ function App() {
                     // like every other instance now; only "Show all"
                     // actually grows it, and only into its own scroll box.
                     capped={5}
-                    byType={intelligence.byType}
+                    byType={filteredByType}
                     topOfType={topOfType}
                     thinkingKey={intelligence.thinkingKey}
                     // This instance IS the plan row's primary column on a chart whose
@@ -2462,9 +3103,12 @@ function App() {
 
                 <SuggestionsCard
                   types={planSlots.restTypes}
+                  // Orthopedics: procedures are the core output, so Clinical
+                  // Actions opens on Interventions once any are ranked.
+                  initialScope={specialty.id === "orthopedics" ? "modality" : null}
                   // Same fix, same reason — see the sibling instance above.
                   capped={5}
-                  byType={intelligence.byType}
+                  byType={filteredByType}
                   topOfType={topOfType}
                   thinkingKey={intelligence.thinkingKey}
                   // The trailing catch-all — referrals, advice, whatever the plan row
@@ -2514,11 +3158,16 @@ function App() {
                 onSelectLabName={setSelectedLabName}
                 onManageLabs={() => handleSidebarNavigate("practice")}
                 adviceLines={adviceLines}
-                therapyLines={therapyLines}
+                interventions={interventionPlan}
                 exerciseLines={exercisePlan.map((l) => ({ id: l.id, text: formatLine(l) }))}
                 onRemoveExercise={removeExercise}
                 onRemoveAdviceLine={removeAdviceLine}
-                onRemoveTherapyLine={removeTherapyLine}
+                onRemoveIntervention={removeIntervention}
+                onAddAnotherInterventionSite={addAnotherInterventionSite}
+                plannedEarlier={plannedEarlier}
+                onPerformPlanned={performPlanned}
+                followOnsFor={followOnsFor}
+                onFollowOn={handleFollowOn}
                 followUpDays={followUpDays}
                 onFollowUpChange={setFollowUpDays}
                 notes={visitNotes}
@@ -2599,7 +3248,15 @@ function App() {
               observables={observables}
               caseSheetEntries={caseSheetEntries}
               onObservableToggle={handleObservableToggle}
+              onObservableToggleAt={chart.toggleObservableAt}
               examination={examination}
+              assessmentLines={assessmentLines}
+              onAddAssessmentAt={addAssessmentAt}
+              onAssessmentDetails={updateAssessmentDetails}
+              onRemoveAssessment={removeDiagnosis}
+              onAddCustomFindingAt={identity.isReal ? handleAddCustomFindingAt : undefined}
+              onAddCustomAssessmentAt={handleAddCustomAssessmentAt}
+              ownAssessmentTerms={ownAssessmentTerms}
               disabled={!patient}
             />
           )}
@@ -2631,7 +3288,110 @@ function App() {
             initialBrand={pendingMedicine?.initialBrand ?? null}
             onCancel={() => setPendingMedicine(null)}
             onConfirm={confirmPendingMedicine}
+            billing={medicineBilling}
           />
+
+          {/* Site + side confirmation, between "ranked" and "on the plan" —
+              the same slot MedicineAddSheet occupies one line up. */}
+          {/* Site and details for an assessment placed on the body. Keyed
+              so a second site opens fresh, never on the last one's state. */}
+          {pendingAssessment && (
+            <AssessmentSiteModal
+              key={pendingAssessment.editId ?? `new-${pendingAssessment.payload.label}`}
+              label={pendingAssessment.payload.label}
+              kind={pendingAssessment.kind}
+              autoPrefill={!pendingAssessment.another}
+              editing={pendingAssessment.editId !== null}
+              initialSite={pendingAssessment.initialSite}
+              initialDetails={pendingAssessment.initialDetails}
+              knownSites={knownSites}
+              onCancel={cancelPendingAssessment}
+              onConfirm={confirmPendingAssessment}
+            />
+          )}
+
+          {/* "The X-ray is back": what it showed (today's assessment, made at
+              the order's site), the image (this visit's attachments) and a
+              note, written onto the order. See ResultSheet.tsx. */}
+          {resultSheetFor?.order && (
+            <ResultSheet
+              key={resultSheetFor.order.id}
+              order={resultSheetFor.order}
+              orderedAt={resultSheetFor.order.orderedAt}
+              assessmentLines={assessmentLines}
+              find={findResultAssessments}
+              onAddAt={addAssessmentAt}
+              onAccept={handleAcceptIntent}
+              onDetails={updateAssessmentDetails}
+              onRemove={removeDiagnosis}
+              visitId={visitId}
+              hospitalId={identity.isReal ? identity.hospitalId : null}
+              patientId={patient?.id ?? null}
+              initial={resultDrafts.get(resultSheetFor.order.id) ?? draftFromResult(
+                resultsToday.get(resultSheetFor.order.id) ?? resultSheetFor.order.resultText ?? null, assessmentLines, diagnoses,
+              )}
+              // A result from an earlier visit opens as an update of it.
+              editing={resultsToday.has(resultSheetFor.order.id) || !!resultSheetFor.order.resultText}
+              onSave={(text, draft) => {
+                const orderId = resultSheetFor.order!.id;
+                setResultDrafts((cur) => new Map(cur).set(orderId, draft));
+                handleOngoingAction(resultSheetFor, { type: "result", text });
+                setResultSheetFor(null);
+              }}
+              onClose={() => setResultSheetFor(null)}
+            />
+          )}
+
+          {/* The exercise dose sheet — side, sets × reps or hold, how often. */}
+          {pendingExercise && (() => {
+            const lib = exerciseLibrary.find((e) => e.intentId === pendingExercise.payload.intentId);
+            return (
+              <ExerciseSheet
+                key={pendingExercise.editId ?? `new-${pendingExercise.payload.intentId}`}
+                label={pendingExercise.payload.label}
+                editing={pendingExercise.editId !== null}
+                initial={pendingExercise.initial}
+                clinicDefault={lib ? {
+                  sets: lib.defaultSets, reps: lib.defaultReps, holdSeconds: lib.defaultHoldSeconds,
+                  perDay: lib.defaultPerDay, notes: lib.notes,
+                } : null}
+                canSaveDefault={!!identity.hospitalId && pendingExercise.payload.intentId > 0}
+                onCancel={cancelPendingExercise}
+                onConfirm={(draft, saveAsDefault) => {
+                  const intentId = pendingExercise.payload.intentId;
+                  confirmPendingExercise(draft);
+                  if (saveAsDefault && identity.hospitalId && intentId > 0) {
+                    setExerciseLibraryEntry({
+                      hospitalId: identity.hospitalId, intentId,
+                      defaultSets: draft.sets, defaultReps: draft.reps, defaultHoldSeconds: draft.holdSeconds,
+                      defaultPerDay: draft.perDay, notes: draft.notes, setBy: identity.userId,
+                    })
+                      .then((entry) => setExerciseLibrary((cur) => [entry, ...cur.filter((e) => e.intentId !== entry.intentId)]))
+                      .catch((err) => showToast(`Added, but the clinic default did not save: ${err?.message ?? err}`));
+                  }
+                }}
+              />
+            );
+          })()}
+
+          {pendingIntervention && (
+            <InterventionInspector
+              key={`${pendingIntervention.payload.intentId}-${pendingIntervention.payload.label}`}
+              label={pendingIntervention.payload.label}
+              initialSite={pendingIntervention.initialSite}
+              knownSites={knownSites}
+              autoPrefill={!pendingIntervention.another}
+              siteAssessments={siteAssessments}
+              earlier={earlierInterventions}
+              fromPlanned={pendingIntervention.fromPlanned ?? null}
+              initialStatus={pendingIntervention.initialStatus}
+              initialDueDays={pendingIntervention.initialDueDays ?? null}
+              initialDetails={pendingIntervention.initialDetails}
+              initialRemovesId={pendingIntervention.initialRemovesId ?? null}
+              onCancel={cancelPendingIntervention}
+              onConfirm={confirmPendingIntervention}
+            />
+          )}
 
           {/* "Not found in ranking or search" — §5, 2026-08-24. Hands off
               into the sheet above unmodified: once `add_medicine` names the
@@ -2901,6 +3661,7 @@ function App() {
         !isFeaturePage && isReviewOpen && patient && (
           <ReviewModal
             patient={patient}
+            seedCharges={interventionCharges(interventionPrices, interventionPlan)}
             doctor={{
               name: doctorProfile?.name ?? DOCTOR_NAME,
               name_hi: doctorProfile?.name_hi ?? null,
@@ -2912,8 +3673,9 @@ function App() {
             }}
             hospital={hospitalProfile}
             vitals={vitals}
-            symptoms={selectedSymptoms}
-            findings={selectedFindings}
+            symptoms={chart.symptomsForRecord}
+            findings={[...chart.findingsForRecord, ...printNeuro.filter((n) => n.abnormal).map((n) => n.text)]}
+            examNotes={printNeuro.filter((n) => !n.abnormal).map((n) => n.text)}
             allFindings={findingsAsDb}
             prescription={prescription}
             tests={selectedTests}
@@ -2925,24 +3687,47 @@ function App() {
             whatsappPhase={whatsappSend.phase}
             whatsappError={whatsappSend.message}
             onEdit={() => setIsReviewOpen(false)}
-            onSave={() => handleConfirmAndSave()}
+            onSave={(billing) => handleConfirmAndSave({ billing })}
             // The dedicated WhatsApp action. Saves + pushes the message and
             // DELIBERATELY leaves Review open — the doctor sees the
             // prescription and the send's outcome before the screen advances.
             // Closing (`closeReview`) is then the "Complete & Next". Later
             // presses retry only the push. Plain "Confirm & Save" never sends.
             onSendWhatsApp={sendReviewOnWhatsApp}
+            onSendToLab={identity.isReal && identity.hospitalId ? () => setLabSheetOpen(true) : undefined}
+            labSentTo={labSentTo}
             onClose={closeReview}
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}
             therapyNotes={therapyNotes}
             exerciseLines={exercisePlan.map(formatLine)}
+            diagnoses={diagnoses}
+            results={printResults}
+            procedures={printProcedures.length ? printProcedures : undefined}
+            continuingCare={printContinuing}
             storySummary={storySummaryLines}
             goalSummary={goalSummaryLines}
             visitId={visitId ?? undefined}
           />
         )
       }
+      {!isFeaturePage && isReviewOpen && labSheetOpen && patient?.id && identity.hospitalId && (
+        <SendToLabSheet
+          tests={selectedTests}
+          labs={preferredLabs}
+          initialLabName={selectedLabName}
+          patient={{ id: patient.id ?? "", name: patient.name, age: patient.age ?? null, gender: patient.gender ?? null }}
+          hospitalId={identity.hospitalId}
+          doctorId={identity.isReal ? identity.doctorId : null}
+          visitId={visitId}
+          prescriptionId={null}
+          defaultIndication={labIndication}
+          defaultContext={labContext}
+          onLabsChanged={setPreferredLabs}
+          onSent={(name) => setLabSentTo(name)}
+          onClose={() => setLabSheetOpen(false)}
+        />
+      )}
     </div >
   );
 }

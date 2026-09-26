@@ -15,17 +15,17 @@
 // rule yet — exactly the posture `inputLayout` already takes for the consult
 // screen (`"soap"` fallback until a profile's turn comes).
 //
-// ── Only two specialties are "real" today, on purpose
+// ── Which specialties are "real" today, on purpose
 //
-// General OPD and Physiotherapy are the only profiles with configured
-// clinical reasoning here, per the brief's own scope ("the meaningful
-// supported contexts are: General OPD, Physiotherapy... Other specialty
-// categories currently present in the system should not be treated as fully
-// supported clinical workflows"). Every other profile (Diagnostics,
-// Cardiology, Pediatrics, Gynaecology, Dentistry, Dermatology) falls through
-// to the General OPD shape — correct today because none of them has its own
-// `inputLayout` yet either (still `"soap"`, see specialtyProfile.ts), so
-// there is no specialty-specific clinical shape to read in the first place.
+// General OPD, Physiotherapy and (added 2026-09-21, Project Pulse Point)
+// Cardiology are the only profiles with configured clinical reasoning here.
+// Every other profile (Diagnostics, Pediatrics, Gynaecology, Dentistry,
+// Dermatology) falls through to the General OPD shape — correct today
+// because none of THEM has its own `inputLayout` yet either (still `"soap"`,
+// see specialtyProfile.ts), so there is no specialty-specific clinical shape
+// to read in the first place. Cardiology earned its own builder the moment
+// its `inputLayout` flipped to `"case-sheet"` and it gained fields
+// (`ef_percent`/`nyha_class`) the General OPD shape has no slot for.
 //
 // ── Honesty over fabrication (Anmol, 2026-08-23)
 //
@@ -133,11 +133,74 @@ const physiotherapySnapshot = (row: PatientRecordRow): ClinicalSnapshot => {
     return { chips: chips.slice(0, 3), detail };
 };
 
+// ── Cardiology ───────────────────────────────────────────────────────────
+// Added for Project Pulse Point (2026-09-21). Finding leads (a cardiology
+// visit's "Possible Finding" section is its own first section — see
+// specialtyProfile.ts's CARDIOLOGY.sections), EF%/NYHA ride beside it when
+// recorded this visit, and medicine is the third chip — same three-chip
+// budget every other profile gets. Detail line prefers the investigation
+// advised (the section right after finding in this profile's own order),
+// falling back to the visit count like the other two builders.
+const cardiologySnapshot = (row: PatientRecordRow): ClinicalSnapshot => {
+    const chips: SnapshotChip[] = [];
+    if (row.finding_names[0]) chips.push({ label: row.finding_names[0], tone: "primary" });
+    else if (row.symptom_names[0]) chips.push({ label: row.symptom_names[0], tone: "primary" });
+
+    if (row.ef_percent) chips.push({ label: `EF ${row.ef_percent}%`, tone: "neutral" });
+    if (row.nyha_class) chips.push({ label: `NYHA ${row.nyha_class}`, tone: "neutral" });
+
+    if (chips.length < 3 && row.medicine_names[0]) {
+        chips.push({ label: row.medicine_names[0], tone: "neutral" });
+    }
+
+    let detail: string | null = null;
+    if (row.test_names.length) {
+        const rest = row.test_names.length - 1;
+        detail = `${row.test_names[0]}${rest > 0 ? ` +${rest} more` : ""} advised`;
+    }
+
+    if (!chips.length && !detail) return EMPTY_SNAPSHOT;
+    if (chips.length) chips.push(countChip(row, "visit"));
+
+    return { chips: chips.slice(0, 3), detail };
+};
+
+// ── Orthopedics ──────────────────────────────────────────────────────────
+// Added for Project Pulse Point (2026-09-21c). Site leads, because "Knee
+// pain" alone is half a fact for this specialty — `body_sites` is where the
+// laterality actually lives (see specialtyProfile.ts's own note on why the
+// engine doesn't rank left/right; this snapshot at least SHOWS it, off the
+// same real body-map tag physiotherapy already records). Finding is the
+// exam sign (a special test result, a deformity). Detail prefers the
+// story's mechanism-of-injury — "fall on outstretched hand" is exactly the
+// kind of line a doctor scanning the patient list wants to see for a
+// trauma case — before falling back to the investigation advised, the same
+// order cardiologySnapshot uses for its own detail line.
+const orthopedicsSnapshot = (row: PatientRecordRow): ClinicalSnapshot => {
+    const chips: SnapshotChip[] = [];
+    if (row.symptom_names[0]) chips.push({ label: row.symptom_names[0], tone: "primary" });
+    if (row.body_sites[0]) chips.push({ label: row.body_sites[0], tone: "neutral" });
+    if (row.finding_names[0]) chips.push({ label: row.finding_names[0], tone: "neutral" });
+
+    if (chips.length) chips.push(countChip(row, "visit"));
+
+    let detail: string | null = row.story_mechanism || null;
+    if (!detail && row.test_names.length) {
+        const rest = row.test_names.length - 1;
+        detail = `${row.test_names[0]}${rest > 0 ? ` +${rest} more` : ""} advised`;
+    }
+
+    if (!chips.length && !detail) return EMPTY_SNAPSHOT;
+    return { chips: chips.slice(0, 3), detail };
+};
+
 type SnapshotBuilder = (row: PatientRecordRow) => ClinicalSnapshot;
 
 const SNAPSHOT_BUILDERS: Record<string, SnapshotBuilder> = {
     general_opd: generalOpdSnapshot,
     physiotherapy: physiotherapySnapshot,
+    cardiology: cardiologySnapshot,
+    orthopedics: orthopedicsSnapshot,
 };
 
 /**

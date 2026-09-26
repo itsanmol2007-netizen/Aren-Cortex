@@ -349,6 +349,69 @@ export async function logPaymentEvent(opts: {
     if (error) console.warn("[payments] audit event failed (non-fatal):", error.message);
 }
 
+// ── Reading one visit's payment, for the review-time billing summary ───────
+
+export interface VisitPaymentSoFar {
+    fee: number;
+    discount: number;
+    gstAmount: number;
+    /** Everything past the fee — dispensed medicine, additional charges, the
+     *  review-time discount on the grand total, and the resolved total
+     *  itself. Populated once `saveConsult` has actually written them (the
+     *  medicine-billing/review-billing fold in `intelligence.ts`'s step
+     *  "3.5") — `0`/`[]`/`null` beforehand, same as the column defaults.
+     *  ReviewModal reads this in `mode="print"` (a reprint, nothing left to
+     *  compute live) and ignores it in `mode="review"` (there it still
+     *  computes these live from `prescription`/its own interactive charge
+     *  and discount state, since nothing has saved yet). */
+    medicineTotal: number;
+    medicineGstAmount: number;
+    additionalCharges: { label: string; amount: number }[];
+    reviewDiscountPercent: number | null;
+    reviewDiscountAmount: number;
+    total: number;
+}
+
+/**
+ * What front desk already recorded for this visit at intake — the fixed
+ * base a doctor's review-time billing summary builds on top of (dispensed
+ * medicine, additional charges, a discount on the grand total — see
+ * ReviewModal's own Billing section) — PLUS, once saved, everything past
+ * that too (medicine/additional-charges/discount/total), for a REPRINT to
+ * show without recomputing anything live. `null` means no row at all: this
+ * clinic never configured a fee, or nobody has recorded one yet, and there
+ * is nothing here for the review screen to show or fold anything into
+ * (same "no visit_payments row, silent no-op" rule `saveConsult`'s own
+ * medicine-billing fold already follows). `visit_payments` carries no
+ * currency of its own — every amount on it is the clinic's own
+ * `hospitals.currency`, same as `BillingPolicy.currency` above.
+ */
+export async function fetchVisitPayment(visitId: string): Promise<VisitPaymentSoFar | null> {
+    const { data, error } = await supabase
+        .from("visit_payments")
+        .select(`
+            fee, discount, gst_amount, medicine_total, medicine_gst_amount,
+            additional_charges, review_discount_percent, review_discount_amount, total
+        `)
+        .eq("visit_id", visitId)
+        .maybeSingle();
+    if (error) throw new Error(`fetchVisitPayment: ${error.message}`);
+    if (!data) return null;
+    return {
+        fee: Number(data.fee ?? 0),
+        discount: Number(data.discount ?? 0),
+        gstAmount: Number(data.gst_amount ?? 0),
+        medicineTotal: Number(data.medicine_total ?? 0),
+        medicineGstAmount: Number(data.medicine_gst_amount ?? 0),
+        additionalCharges: Array.isArray(data.additional_charges)
+            ? (data.additional_charges as { label: string; amount: number }[])
+            : [],
+        reviewDiscountPercent: data.review_discount_percent != null ? Number(data.review_discount_percent) : null,
+        reviewDiscountAmount: Number(data.review_discount_amount ?? 0),
+        total: Number(data.total ?? 0),
+    };
+}
+
 // ── Reading the trail (Parallax) ───────────────────────────────────────────
 
 export interface PaymentEvent {

@@ -83,6 +83,18 @@ export async function addBodySite(opts: {
     return fromRow(data);
 }
 
+/** A site's note, set or cleared — the one row per site, never a second one. */
+export async function updateBodySiteNote(id: number, note: string | null): Promise<BodySiteFinding> {
+    const { data, error } = await supabase
+        .from("visit_body_sites")
+        .update({ note })
+        .eq("id", id)
+        .select(COLUMNS)
+        .single();
+    if (error) throw new Error(`updateBodySiteNote: ${error.message}`);
+    return fromRow(data);
+}
+
 export async function deleteBodySite(id: number): Promise<void> {
     const { error } = await supabase.from("visit_body_sites").delete().eq("id", id);
     if (error) throw new Error(`deleteBodySite: ${error.message}`);

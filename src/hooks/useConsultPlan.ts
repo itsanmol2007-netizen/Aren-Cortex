@@ -32,14 +32,21 @@
 // learning loop.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PrescriptionMedicine } from "../types";
 import type { AcceptPayload } from "../features/consult/types";
-import type { MedicineDraft } from "../features/consult/MedicineAddSheet";
+import type { MedicineDraft, MedicineBillingContext } from "../features/consult/MedicineAddSheet";
 import { useJustAdded } from "../features/consult/useJustAdded";
 import type { Medicine as SynapseBrand } from "../lib/synapse/brands";
 import type { CompanionSuggestion } from "../lib/synapse/companions";
-import { doseFor, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
+import { doseFor, type ExerciseDraft, type ExerciseLine, type ExerciseSide } from "../features/consult/exercisePlan";
+import { formatLine as formatIntervention, type InterventionLine, type InterventionSide } from "../features/consult/interventionPlan";
+import type { InterventionDraft } from "../components/InterventionInspector";
+import type { AssessmentLine } from "../features/consult/assessmentPlan";
+import {
+  composeAssessmentText, familyFor, imagingFamilyFor, pruneDetails, siteAllowed, type AssessmentDetails, registerCustomAssessment,
+} from "../features/consult/assessmentFamilies";
+import { clinicalSiteLabel, type SiteRef } from "../lib/body/clinicalSite";
 import type { PersonalizedIntent } from "../lib/synapse/personalize";
 import { guardIntent } from "../lib/synapse/engine";
 import { resolveProductByName } from "../lib/db/medicines";
@@ -48,10 +55,15 @@ import {
   fetchCompositionBrands, resolvePanelTests,
   type SearchedAccept,
 } from "../lib/db/synapse";
+import {
+  fetchMedicineBillingPolicy, fetchClinicMedicinePrices, setClinicMedicinePrice,
+  type MedicineBillingPolicy, type ClinicMedicinePrice,
+} from "../lib/db/medicinePricing";
 import type { SynapseData } from "./useSynapse";
 import type { ConsultIntelligence } from "./useConsultIntelligence";
 import type { AcceptLedger } from "./useAcceptLedger";
 import type { PlanDraft } from "../lib/consultDraft";
+import { isHeadOf } from "../lib/clinicalText";
 
 /**
  * A ranked molecule plus the brand chosen for it, as a prescription line.
@@ -73,8 +85,12 @@ function toPrescriptionLine(
     // This read `[brand.compositionId]` unconditionally, so a combination was
     // written into the clinical record as a single molecule and its second
     // drug was invisible to duplicate and interaction checking. Absent means
-    // single-molecule, where the fallback is exactly correct.
-    composition_ids: brand.compositionIds ?? [brand.compositionId],
+    // single-molecule, where the fallback is exactly correct — EXCEPT when
+    // `compositionId` is itself null (a composition-less add, 2026-09-19),
+    // where there is no molecule to fall back to at all and this must stay
+    // `[]`, never `[null]` polluting the array every duplicate/interaction
+    // check and DB write downstream reads.
+    composition_ids: brand.compositionIds ?? (brand.compositionId != null ? [brand.compositionId] : []),
     primary_composition_id: brand.compositionId,
     name: brand.name,
     category: payload.label,
@@ -85,10 +101,16 @@ function toPrescriptionLine(
     // the summary rail and the prescription preview were both printing one
     // molecule of a combination. They read this one field, so they are both
     // fixed here. `composition_ids` above is the machine-readable half; this
-    // is what the doctor and the patient actually see on the page.
+    // is what the doctor and the patient actually see on the page. A
+    // composition-less medicine shows its own free-text note instead, or
+    // falls back to empty rather than the misleading intent label (there is
+    // no real composition behind `payload.label` in that case).
     composition: brand.compositionLabels?.length
       ? brand.compositionLabels.join(" + ")
-      : payload.label,
+      : brand.compositionId != null
+        ? payload.label
+        : brand.compositionNote ?? "",
+    compositionNote: brand.compositionNote ?? null,
     dosage: "1 tab",
     frequency: "Morning and Night",
     duration: "5 days",
@@ -113,6 +135,10 @@ export interface ConsultPlanArgs {
   /** the six intent maps, declared before the engine — see the header */
   ledger: AcceptLedger;
   hospitalId: string;
+  /** `users.id` of the signed-in doctor — attributes a clinic medicine price
+   *  to whoever set it (`clinic_medicine_prices.set_by`). Null while
+   *  unauthenticated, same as `ClinicalIdentity.userId`. */
+  actorUserId: string | null;
   showToast: (msg: string) => void;
   /**
    * Turn a confirmed condition into an engine input and, when it is chronic, a
@@ -156,8 +182,11 @@ export interface ConsultPlan {
   // ── Derived, for the surfaces that read it ────────────────────────────
   /** Advice notes are one string; the Plan column edits them as lines. */
   adviceLines: string[];
-  /** what was delivered in the clinic today — see `therapyNotes` in the body */
-  therapyLines: string[];
+  /** what was delivered in the clinic today, structured — see `interventionPlan` in the body */
+  interventionPlan: InterventionLine[];
+  /** `interventionPlan`, formatted and newline-joined — the one thing the
+   *  prescription's `therapy_notes` column and the print/review surfaces
+   *  still read; see the header on `interventionPlan` for why. */
   therapyNotes: string;
   /** the home programme, with its dose in fields rather than in prose */
   exercisePlan: ExerciseLine[];
@@ -179,6 +208,41 @@ export interface ConsultPlan {
   inspectorMedicine: PrescriptionMedicine | null;
   confirmPendingMedicine: (draft: MedicineDraft) => void;
   confirmStagedMedicine: () => void;
+  /** The medicine-billing half of the dose sheet — `enabled: false` for the
+   *  vast majority of clinics that never turn this on. See
+   *  lib/db/medicinePricing.ts and MedicineAddSheet's own doc comment. */
+  medicineBilling: MedicineBillingContext;
+  /** The same policy, in the shape `saveConsult` needs (its GST rate, not
+   *  just the sheet's prices) — see useConsultLifecycle's save path. */
+  medicineBillingPolicy: MedicineBillingPolicy;
+
+  // ── The intervention inspector ─────────────────────────────────────────
+  /** the intervention waiting on site/side/notes confirmation — see
+   *  InterventionInspector.tsx */
+  pendingIntervention: PendingIntervention | null;
+  confirmPendingIntervention: (draft: InterventionDraft) => void;
+  cancelPendingIntervention: () => void;
+
+  // ── Assessments at a site ────────────────────────────────────────────
+  /** the structure behind every anatomical entry in `diagnoses` — see
+   *  features/consult/assessmentPlan.ts */
+  assessmentLines: AssessmentLine[];
+  /** an anatomical assessment waiting on its site — see AssessmentSiteModal */
+  pendingAssessment: PendingAssessment | null;
+  confirmPendingAssessment: (draft: { site: SiteRef | null; details: AssessmentDetails }) => void;
+  cancelPendingAssessment: () => void;
+  /** reopen a line's modal to change its site or details */
+  editAssessmentLine: (id: string) => void;
+  /** the same assessment at another site — a second fracture */
+  addAnotherAssessmentSite: (intentId: number | null, label: string) => void;
+  /** An assessment placed where the site is already known — the body map's
+   *  panel. No modal: the line exists at once and its details are edited
+   *  in place. Returns the new line's id, or null when it was not added. */
+  addAssessmentAt: (payload: AcceptPayload, site: SiteRef) => string | null;
+  /** a doctor's own assessment at a site, when the catalogue has none */
+  addCustomAssessmentAt: (label: string, site: SiteRef) => string | null;
+  /** change a line's details in place, its site unchanged */
+  updateAssessmentDetails: (id: string, details: AssessmentDetails) => void;
 
   // ── Taking things, and taking them back ───────────────────────────────
   handleAcceptIntent: (payload: AcceptPayload) => void;
@@ -195,7 +259,23 @@ export interface ConsultPlan {
   addFreeReferral: (label: string) => void;
   addFreeAdvice: (label: string) => void;
   removeAdviceLine: (line: string) => void;
-  removeTherapyLine: (line: string) => void;
+  removeIntervention: (id: string) => void;
+  /** The same intervention, at another site — see the doc comment on
+   *  `duplicateExerciseForSide`, the pattern this borrows. Opens the
+   *  inspector again rather than cloning silently, because a second site
+   *  is as much a clinical decision as the first. */
+  addAnotherInterventionSite: (id: string) => void;
+  openIntervention: (payload: AcceptPayload, opts: {
+    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails; removesId?: string | null;
+  }) => void;
+  openImagingAt: (payload: AcceptPayload, site: SiteRef | null) => void;
+  /** the exercise waiting on its dose sheet */
+  pendingExercise: PendingExercise | null;
+  confirmPendingExercise: (draft: ExerciseDraft) => void;
+  cancelPendingExercise: () => void;
+  editExercise: (id: string) => void;
+  /** perform, this visit, a planned item from an earlier one */
+  performPlanned: (p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => void;
   /** Undo any accept, from the row it was accepted on — see the doc comment. */
   removeAcceptedIntent: (intentId: number, type: AcceptPayload["type"], label: string) => void;
   updateExercise: (id: string, patch: Partial<ExerciseLine>) => void;
@@ -226,12 +306,51 @@ export interface PendingMedicine {
   initialBrand: SynapseBrand | null;
 }
 
+export interface PendingIntervention {
+  payload: AcceptPayload;
+  /** an explicit site to open on; empty lets site context decide */
+  initialSite: string;
+  /** opened from "+ Another site": the known site is not the answer */
+  another: boolean;
+  /** performing a planned item from an earlier visit (Phase 5) */
+  fromPlanned?: { id: string; siteRef: SiteRef | null; details: AssessmentDetails } | null;
+  /** a follow-on that opens as Planned, with what it already knows (Phase 6) */
+  initialStatus?: "performed" | "planned";
+  initialDueDays?: number | null;
+  initialDetails?: AssessmentDetails;
+  initialSiteRef?: SiteRef | null;
+  /** the earlier cast / sutures this removes (Ongoing Care → Remove) */
+  initialRemovesId?: string | null;
+}
+
+/** An exercise waiting on its dose — see ExerciseSheet.tsx. */
+export interface PendingExercise {
+  payload: AcceptPayload;
+  /** the prescribed line being edited; null for a new one */
+  editId: string | null;
+  /** the line's current values, when editing */
+  initial: ExerciseDraft | null;
+}
+
+export interface PendingAssessment {
+  /** an assessment ("Fracture") or a limb imaging order ("X-Ray Knee") */
+  kind: "assessment" | "imaging";
+  /** opened from "+ Another site" or an edit: the known site is not the answer */
+  another: boolean;
+  payload: AcceptPayload;
+  /** the line being edited; null for a new one */
+  editId: string | null;
+  initialSite: SiteRef | null;
+  initialDetails: AssessmentDetails;
+}
+
 export function useConsultPlan({
   data,
   reloadSynapse,
   intelligence,
   ledger,
   hospitalId,
+  actorUserId,
   showToast,
   confirmCondition,
   unconfirmCondition,
@@ -277,23 +396,76 @@ export function useConsultPlan({
   const [visitNotes, setVisitNotes] = useState("");
   const [pendingMedicine, setPendingMedicine] = useState<PendingMedicine | null>(null);
 
+  // ── Medicine dispensing billing (opt-in) — see lib/db/medicinePricing.ts ─
+  // Read once per hospital, cheap and rarely changing (durable-cached inside
+  // fetchMedicineBillingPolicy itself, same as the consult-fee policy).
+  const [medicineBillingPolicy, setMedicineBillingPolicy] = useState<MedicineBillingPolicy>({
+    enabled: false, gstEnabled: false, gstPercent: 18,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    fetchMedicineBillingPolicy(hospitalId).then((policy) => {
+      if (!cancelled) setMedicineBillingPolicy(policy);
+    });
+    return () => { cancelled = true; };
+  }, [hospitalId]);
+
+  // This clinic's own price per medicine, batch-fetched for whichever brands
+  // the dose sheet is currently showing — accumulated across sheet openings
+  // (never cleared) so a price already seen this consult doesn't cost a
+  // second round trip the next time the same brand comes up.
+  const [medicinePrices, setMedicinePrices] = useState<Map<number, ClinicMedicinePrice>>(new Map());
+  const [loadingMedicinePrices, setLoadingMedicinePrices] = useState(false);
+  useEffect(() => {
+    if (!medicineBillingPolicy.enabled || !pendingMedicine || pendingMedicine.brands.length === 0) return;
+    let cancelled = false;
+    setLoadingMedicinePrices(true);
+    fetchClinicMedicinePrices(hospitalId, pendingMedicine.brands.map((b) => b.id))
+      .then((prices) => {
+        if (cancelled) return;
+        setMedicinePrices((curr) => {
+          const next = new Map(curr);
+          prices.forEach((v, k) => next.set(k, v));
+          return next;
+        });
+      })
+      .catch((err) => console.warn("fetchClinicMedicinePrices failed:", err))
+      .finally(() => { if (!cancelled) setLoadingMedicinePrices(false); });
+    return () => { cancelled = true; };
+  }, [pendingMedicine, medicineBillingPolicy.enabled, hospitalId]);
+
+  const onSetMedicinePrice = useCallback(async (medicineId: number, packPrice: number, packUnits: number) => {
+    const price = await setClinicMedicinePrice({ hospitalId, medicineId, packPrice, packUnits, setBy: actorUserId });
+    setMedicinePrices((curr) => new Map(curr).set(medicineId, price));
+  }, [hospitalId, actorUserId]);
+
+  const medicineBilling: MedicineBillingContext = useMemo(() => ({
+    enabled: medicineBillingPolicy.enabled,
+    prices: medicinePrices,
+    loadingPrices: loadingMedicinePrices,
+    onSetPrice: onSetMedicinePrice,
+  }), [medicineBillingPolicy.enabled, medicinePrices, loadingMedicinePrices, onSetMedicinePrice]);
+
   /**
-   * What was DELIVERED in the clinic today — ultrasound, IFT, manual therapy.
+   * INTERVENTIONS — what was DELIVERED in the clinic today: casting, closed
+   * reduction, splinting, joint injection (orthopedics); ultrasound, IFT,
+   * manual therapy (physiotherapy). Same `modality` IntentType as always —
+   * see interventionPlan.ts's header for the full reasoning — restructured
+   * 2026-09-23 from a newline-joined string (the same shape `adviceNotes`
+   * uses) into lines with their own site, because a plain string could not
+   * say WHERE a procedure was done. That is not a cosmetic gap: a patient
+   * with two simultaneous fractures needs two lines, each with its own
+   * site, and a string cannot hold that without becoming prose a human has
+   * to parse back apart.
    *
-   * Its own collection rather than more lines in `adviceNotes`, which is where
-   * referrals, advice and exercises all land. That merge is fine for those
-   * three: they are all instructions the patient leaves with. A modality is
-   * not an instruction, it is a record of something that was done to them, and
-   * a physiotherapy session largely CONSISTS of these. Collapsing them into
-   * advice would print "Ultrasound 7 min" under the heading "Advice" on a
-   * prescription, and would make "what did we do in session 4" unanswerable
-   * without a human reading prose.
-   *
-   * Stored as one newline-joined string for exactly the same reason
-   * `adviceNotes` is: it is one text field on the prescription, and the Plan
-   * column edits it as lines.
+   * A `modality` accept is STAGED here, exactly as `medicine` is staged in
+   * `pendingMedicine` — see `handleAcceptIntent`. Unlike advice, referral
+   * and exercise (all of which commit straight to the plan), a doctor
+   * confirms an intervention's site before it lands, because the site is
+   * the one thing worth asking about every single time.
    */
-  const [therapyNotes, setTherapyNotes] = useState<string>("");
+  const [interventionPlan, setInterventionPlan] = useState<InterventionLine[]>([]);
+  const [pendingIntervention, setPendingIntervention] = useState<PendingIntervention | null>(null);
 
   /**
    * The home programme — what the patient takes away and performs themselves.
@@ -311,16 +483,18 @@ export function useConsultPlan({
    */
   const [exercisePlan, setExercisePlan] = useState<ExerciseLine[]>([]);
 
+  /**
+   * Assessments that happen somewhere on the body ("Fracture — Left knee").
+   * Staged like an intervention: the site is asked for on every accept,
+   * because an unplaced fracture is not something anyone can treat. Each
+   * line's `text` also lives in `diagnoses`; see assessmentPlan.ts.
+   */
+  const [assessmentLines, setAssessmentLines] = useState<AssessmentLine[]>([]);
+  const [pendingExercise, setPendingExercise] = useState<PendingExercise | null>(null);
+  const [pendingAssessment, setPendingAssessment] = useState<PendingAssessment | null>(null);
+
   const appendAdvice = useCallback((line: string) => {
     setAdviceNotes((curr) => {
-      const existing = curr.split("\n").map((l) => l.trim()).filter(Boolean);
-      if (existing.includes(line)) return curr;
-      return [...existing, line].join("\n");
-    });
-  }, []);
-
-  const appendTherapy = useCallback((line: string) => {
-    setTherapyNotes((curr) => {
       const existing = curr.split("\n").map((l) => l.trim()).filter(Boolean);
       if (existing.includes(line)) return curr;
       return [...existing, line].join("\n");
@@ -355,7 +529,7 @@ export function useConsultPlan({
    */
   const guardProduct = useCallback((brand: SynapseBrand): string[] => {
     const ruleset = data?.ruleset;
-    const compositionIds = brand.compositionIds ?? [brand.compositionId];
+    const compositionIds = brand.compositionIds ?? (brand.compositionId != null ? [brand.compositionId] : []);
     if (!ruleset || compositionIds.length < 2) return [];
 
     const active = intelligence.result?.activeSignals ?? [];
@@ -445,8 +619,9 @@ export function useConsultPlan({
             return [...merged];
           });
         } else {
+          const orderText = payload.orderText ?? payload.label;
           setSelectedTests((curr) =>
-            curr.includes(payload.label) ? curr : [...curr, payload.label]
+            curr.includes(orderText) ? curr : [...curr, orderText]
           );
         }
         break;
@@ -461,32 +636,43 @@ export function useConsultPlan({
       // above. A newly accepted exercise starts on a sensible dose that the
       // physiotherapist edits on the row; `doseFor` picks reps or a hold from
       // the exercise's own name.
-      case "exercise":
+      // Since 2026-09-24 the dose normally arrives from the exercise sheet
+      // (`exerciseDraft`); a caller without one still gets `doseFor`.
+      case "exercise": {
+        const d = payload.exerciseDraft;
+        const side = d?.side ?? null;
         setExercisePlan((curr) => {
-          if (curr.some((l) => l.intentId === payload.intentId && l.side === null)) return curr;
+          if (curr.some((l) => l.intentId === payload.intentId && l.side === side)) return curr;
           return [...curr, {
             id: `ex-${payload.intentId}-${Date.now()}`,
             intentId: payload.intentId,
             label: payload.label,
-            side: null,
-            notes: "",
+            side,
+            notes: d?.notes ?? "",
             sortOrder: curr.length,
-            ...doseFor(payload.label),
+            ...(d
+              ? { sets: d.sets, reps: d.reps, holdSeconds: d.holdSeconds, perDay: d.perDay, loadKg: d.loadKg, daysPerWeek: d.daysPerWeek, weeks: d.weeks }
+              : doseFor(payload.label)),
           }];
         });
         break;
-      // Delivered here, today. See `therapyNotes` above and IntentType in
-      // engine.ts for why this does not join the three above.
+      }
+      // Nothing to do here: `handleAcceptIntent` never reaches `commitAccept`
+      // for a fresh `modality` accept — it stages into `pendingIntervention`
+      // instead, and `confirmPendingIntervention` calls this function ONLY
+      // for the ledger registration above, once the site is confirmed. This
+      // case exists so a future caller cannot reintroduce the old
+      // instant-commit-with-no-site behaviour by accident.
       case "modality":
-        appendTherapy(payload.label);
         break;
       case "finding": {
         // The engine's reading of the chart, taken as the working diagnosis.
         // It lands on the Plan and prints on the Rx — and, the part that was
         // missing until now, it is finally RECORDED as an accept, so the
         // decision log sees which impression the doctor actually agreed with.
+        const dxText = payload.diagnosisText ?? payload.label;
         setDiagnoses((curr) =>
-          curr.includes(payload.label) ? curr : [...curr, payload.label]
+          curr.includes(dxText) ? curr : [...curr, dxText]
         );
         // ★ And, since 2026-08-15, it also becomes an INPUT. A mapped condition
         // joins the chart as context and the engine re-ranks in the same frame;
@@ -561,6 +747,36 @@ export function useConsultPlan({
         .catch((err: any) => showToast(`Could not load tests for ${payload.label}: ${err.message}`));
       return;
     }
+    // ── EVERY intervention confirms its site first ─────────────────────────
+    // Staged exactly like medicine, for the same reason: the site is a
+    // clinical decision on every single accept, not only on the ones where
+    // it happens to matter, and asking after the fact means the doctor has
+    // to remember to go back and add it. See PendingIntervention.
+    if (payload.type === "modality") {
+      // The site comes from the visit's own site context (Phase 3), which the
+      // inspector reads from its `knownSites` — never guessed here.
+      setPendingIntervention({ payload, initialSite: "", another: false });
+      return;
+    }
+
+    // An assessment with a place on the body asks where, first — the same
+    // staging as an intervention. Everything else (malaria, hypertension)
+    // still lands in one tap.
+    if (payload.type === "finding" && familyFor(payload.label)) {
+      setPendingAssessment({ kind: "assessment", another: false, payload, editId: null, initialSite: null, initialDetails: {} });
+      return;
+    }
+    // An exercise opens its dose sheet: side, sets × reps or hold, how often.
+    if (payload.type === "exercise") {
+      setPendingExercise({ payload, editId: null, initial: null });
+      return;
+    }
+    // A limb X-ray or MRI asks which side, the same way.
+    if (payload.type === "test" && imagingFamilyFor(payload.label)) {
+      setPendingAssessment({ kind: "imaging", another: false, payload, editId: null, initialSite: null, initialDetails: {} });
+      return;
+    }
+
     if (payload.type !== "medicine") {
       commitAccept(payload);
       return;
@@ -657,6 +873,19 @@ export function useConsultPlan({
     setPendingMedicine(null);
     commitAccept({ ...payload, medicine: draft.medicine });
 
+    // Copied at confirm time, never read live again — the same principle
+    // `doctors.consultation_fee` -> `visit_payments.fee` already uses. A
+    // price change next month must never rewrite a prescription already
+    // handed to a patient. `undefined` (billing off) stays undefined, never
+    // coerced to null, so PrescriptionMedicine looks exactly as it always
+    // did for a clinic that has never turned this on.
+    const billingFields = medicineBillingPolicy.enabled
+      ? {
+        quantityDispensed: draft.quantityDispensed?.trim() ? Number(draft.quantityDispensed) : null,
+        unitPrice: draft.medicine ? medicinePrices.get(draft.medicine.id)?.unitPrice ?? null : null,
+      }
+      : {};
+
     // The dose the doctor confirmed, applied over whatever the composition
     // defaulted to. Deferred one frame so it lands after commitAccept's own
     // state update rather than racing it.
@@ -671,12 +900,13 @@ export function useConsultPlan({
               duration_days: draft.durationDays ? Number(draft.durationDays) : m.duration_days,
               instructions: draft.instructions,
               is_sos: draft.isSos,
+              ...billingFields,
             }
             : m
         )
       );
     }, 0);
-  }, [pendingMedicine, commitAccept]);
+  }, [pendingMedicine, commitAccept, medicineBillingPolicy.enabled, medicinePrices]);
 
   /** Swap the brand under an already-chosen molecule. Always deliberate. */
   const handleChangeBrand = useCallback((intentId: number, brand: SynapseBrand) => {
@@ -693,6 +923,16 @@ export function useConsultPlan({
 
   /** Pin (or unpin) the brand the whole clinic sees first for this molecule. */
   const handlePinClinicBrand = useCallback(async (brand: SynapseBrand, pinned: boolean) => {
+    // A clinic default is a preference keyed on a MOLECULE
+    // (`clinic_brand_preference`'s primary key) — meaningless for a
+    // composition-less medicine, which has no molecule to prefer a brand
+    // for. Guarded here rather than only in whatever surface renders the
+    // pin control, so a composition-less medicine can never reach this
+    // write regardless of which screen it was added from.
+    if (brand.compositionId == null) {
+      showToast(`${brand.name} has no composition on file, so it can't be set as a clinic default`);
+      return;
+    }
     try {
       if (pinned) {
         await setClinicBrandDefault({
@@ -724,6 +964,303 @@ export function useConsultPlan({
     setSelectedMedicineId(null);
   }, [stagedMedicine]);
 
+  /**
+   * The site is confirmed — now it becomes a plan line.
+   *
+   * Registers the accept in the ledger via `commitAccept` (whose own
+   * `modality` case is now a no-op — see its comment) exactly the way
+   * `confirmPendingMedicine` does, then appends the structured line itself.
+   * No race to patch afterwards, unlike medicine's `setTimeout(0)`: nothing
+   * else writes an intervention line, so there is nothing to patch.
+   */
+  const confirmPendingIntervention = useCallback((draft: InterventionDraft) => {
+    if (!pendingIntervention) return;
+    const { payload } = pendingIntervention;
+    setPendingIntervention(null);
+    commitAccept(payload);
+    setInterventionPlan((curr) => [...curr, {
+      id: `intv-${payload.intentId}-${Date.now()}`,
+      intentId: payload.intentId || null,
+      label: payload.label,
+      site: draft.site,
+      side: draft.side,
+      notes: draft.notes,
+      sortOrder: curr.length,
+      family: draft.family,
+      siteRef: draft.siteRef,
+      details: draft.details,
+      text: draft.text || undefined,
+      removesId: draft.removesId,
+      assessmentText: draft.assessmentText,
+      status: draft.status,
+      dueDate: draft.dueDate,
+      fulfilsId: draft.fulfilsId,
+    }]);
+  }, [pendingIntervention, commitAccept]);
+
+  const cancelPendingIntervention = useCallback(() => {
+    setPendingIntervention(null);
+  }, []);
+
+  /**
+   * The site (and any details) are chosen — now it becomes a diagnosis.
+   * A new line registers the accept through `commitAccept` with its
+   * composed text, so the ledger, the decision log and the standing-fact
+   * path all run exactly as for a one-tap assessment. An edit only swaps
+   * the text in place, keeping its position (the first is PRIMARY).
+   */
+  const confirmPendingAssessment = useCallback((draft: { site: SiteRef | null; details: AssessmentDetails }) => {
+    if (!pendingAssessment) return;
+    const { payload, editId, kind } = pendingAssessment;
+    const family = kind === "imaging" ? imagingFamilyFor(payload.label) : familyFor(payload.label);
+    if (!family) return;
+    setPendingAssessment(null);
+    const details = pruneDetails(family, draft.site, draft.details);
+    const text = composeAssessmentText(payload.label, family, draft.site, details);
+
+    if (kind === "imaging") {
+      if (selectedTests.includes(text)) {
+        showToast(`${text} is already ordered`);
+        return;
+      }
+      if (payload.intentId && acceptedIntents.has(payload.intentId)) {
+        setSelectedTests((curr) => [...curr, text]);
+      } else {
+        commitAccept({ ...payload, orderText: text });
+      }
+      return;
+    }
+
+    if (editId) {
+      const old = assessmentLines.find((l) => l.id === editId);
+      if (!old) return;
+      setAssessmentLines((curr) => curr.map((l) => (l.id === editId ? { ...l, site: draft.site, details, text } : l)));
+      setDiagnoses((curr) => {
+        if (old.text === text) return curr;
+        // Two identical lines collapse to one rather than printing twice.
+        if (curr.includes(text)) return curr.filter((d) => d !== old.text);
+        return curr.map((d) => (d === old.text ? text : d));
+      });
+      return;
+    }
+
+    if (diagnoses.includes(text)) {
+      showToast(`${text} is already in the assessment`);
+      return;
+    }
+    if (payload.intentId && acceptedIntents.has(payload.intentId)) {
+      // A second site of something already confirmed: the decision was
+      // recorded once, only the line is new.
+      setDiagnoses((curr) => [...curr, text]);
+    } else {
+      commitAccept({ ...payload, diagnosisText: text });
+    }
+    setAssessmentLines((curr) => [...curr, {
+      id: `dx-${payload.intentId}-${Date.now()}`,
+      intentId: payload.intentId || null,
+      label: payload.label,
+      family: family.key,
+      site: draft.site,
+      details,
+      text,
+    }]);
+  }, [pendingAssessment, assessmentLines, diagnoses, selectedTests, acceptedIntents, commitAccept, showToast]);
+
+  const cancelPendingAssessment = useCallback(() => {
+    setPendingAssessment(null);
+  }, []);
+
+  const addAssessmentAt = useCallback((payload: AcceptPayload, site: SiteRef): string | null => {
+    const family = familyFor(payload.label);
+    if (!family || !siteAllowed(family, site)) return null;
+    const text = composeAssessmentText(payload.label, family, site, {});
+    const existing = assessmentLines.find((l) => l.text === text);
+    if (existing) return existing.id;
+    if (diagnoses.includes(text)) return null;
+    if (payload.intentId && acceptedIntents.has(payload.intentId)) {
+      setDiagnoses((curr) => [...curr, text]);
+    } else {
+      commitAccept({ ...payload, diagnosisText: text });
+    }
+    const id = `dx-${payload.intentId}-${Date.now()}`;
+    setAssessmentLines((curr) => [...curr, {
+      id, intentId: payload.intentId || null, label: payload.label, family: family.key, site, details: {}, text,
+    }]);
+    return id;
+  }, [assessmentLines, diagnoses, acceptedIntents, commitAccept]);
+
+  const addCustomAssessmentAt = useCallback((label: string, site: SiteRef): string | null => {
+    const clean = label.trim().replace(/\s+/g, " ");
+    if (!clean) return null;
+    registerCustomAssessment(clean);
+    const family = familyFor(clean);
+    if (!family) return null;
+    const text = composeAssessmentText(clean, family, site, {});
+    const existing = assessmentLines.find((l) => l.text === text);
+    if (existing) return existing.id;
+    setDiagnoses((curr) => (curr.includes(text) ? curr : [...curr, text]));
+    const id = `dx-custom-${Date.now()}`;
+    setAssessmentLines((curr) => [...curr, {
+      id, intentId: null, label: clean, family: family.key, site, details: {}, text,
+    }]);
+    return id;
+  }, [assessmentLines]);
+
+  const updateAssessmentDetails = useCallback((id: string, raw: AssessmentDetails) => {
+    const old = assessmentLines.find((l) => l.id === id);
+    const family = old ? familyFor(old.label) : null;
+    if (!old || !family) return;
+    const details = pruneDetails(family, old.site, raw);
+    const text = composeAssessmentText(old.label, family, old.site, details);
+    setAssessmentLines((curr) => curr.map((l) => (l.id === id ? { ...l, details, text } : l)));
+    setDiagnoses((curr) => {
+      if (old.text === text) return curr;
+      if (curr.includes(text)) return curr.filter((d) => d !== old.text);
+      return curr.map((d) => (d === old.text ? text : d));
+    });
+  }, [assessmentLines]);
+
+  const editAssessmentLine = useCallback((id: string) => {
+    const line = assessmentLines.find((l) => l.id === id);
+    if (!line) return;
+    setPendingAssessment({
+      payload: {
+        intentId: line.intentId ?? 0, type: "finding", label: line.label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      kind: "assessment",
+      another: true,
+      editId: id,
+      initialSite: line.site,
+      initialDetails: line.details,
+    });
+  }, [assessmentLines]);
+
+  const addAnotherAssessmentSite = useCallback((intentId: number | null, label: string) => {
+    setPendingAssessment({
+      payload: {
+        intentId: intentId ?? 0, type: "finding", label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      kind: "assessment",
+      another: true,
+      editId: null,
+      initialSite: null,
+      initialDetails: {},
+    });
+  }, []);
+
+  const removeIntervention = useCallback((id: string) => {
+    let intentId: number | null = null;
+    setInterventionPlan((curr) => {
+      const found = curr.find((l) => l.id === id);
+      intentId = found?.intentId ?? null;
+      const rest = curr.filter((l) => l.id !== id);
+      // Only release the ledger entry when this was the LAST line for that
+      // intent — a bilateral pair is one accept with two sites, and taking
+      // one side off the plan is not the doctor withdrawing the decision.
+      if (intentId != null && !rest.some((l) => l.intentId === intentId)) {
+        releaseIntent(intentId);
+      }
+      return rest;
+    });
+  }, [releaseIntent]);
+
+  /**
+   * The same intervention, at another site — a bilateral cast, or a second
+   * fracture the ranked row already covers. Opens the inspector again
+   * rather than cloning silently: a second site is as much a clinical
+   * decision as the first, same reasoning as `duplicateExerciseForSide`
+   * one column over, which clones without asking because a dose carries
+   * forward safely and a site never should.
+   */
+  const addAnotherInterventionSite = useCallback((id: string) => {
+    const src = interventionPlan.find((l) => l.id === id);
+    if (!src) return;
+    setPendingIntervention({
+      payload: {
+        intentId: src.intentId ?? 0,
+        type: "modality",
+        label: src.label,
+        refTable: null,
+        refId: null,
+        medicine: null,
+        viaSearch: false,
+        overridden: false,
+      },
+      initialSite: "",
+      another: true,
+    });
+  }, [interventionPlan]);
+
+  /** The dose is set — a new line, or the edited one. */
+  const confirmPendingExercise = useCallback((draft: ExerciseDraft) => {
+    if (!pendingExercise) return;
+    const { payload, editId } = pendingExercise;
+    setPendingExercise(null);
+    if (editId) {
+      setExercisePlan((curr) => curr.map((l) => (l.id === editId ? { ...l, ...draft } : l)));
+      return;
+    }
+    commitAccept({ ...payload, exerciseDraft: draft });
+  }, [pendingExercise, commitAccept]);
+
+  const cancelPendingExercise = useCallback(() => setPendingExercise(null), []);
+
+  /** Reopen a prescribed exercise's sheet to change its dose. */
+  const editExercise = useCallback((id: string) => {
+    const l = exercisePlan.find((x) => x.id === id);
+    if (!l) return;
+    setPendingExercise({
+      payload: {
+        intentId: l.intentId ?? 0, type: "exercise", label: l.label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      editId: id,
+      initial: {
+        side: l.side, sets: l.sets, reps: l.reps, holdSeconds: l.holdSeconds, perDay: l.perDay,
+        loadKg: l.loadKg ?? null, daysPerWeek: l.daysPerWeek ?? null, weeks: l.weeks ?? null, notes: l.notes,
+      },
+    });
+  }, [exercisePlan]);
+
+  /**
+   * Open the Perform modal for a follow-on (followOns.ts): already at the
+   * line's site, and — for a planned removal — already Planned with its due
+   * day and what it removes. The doctor still confirms; nothing lands alone.
+   */
+  const openIntervention = useCallback((payload: AcceptPayload, opts: {
+    site: SiteRef | null; status?: "planned"; dueDays?: number | null; details?: AssessmentDetails; removesId?: string | null;
+  }) => {
+    setPendingIntervention({
+      payload,
+      initialSite: opts.site ? clinicalSiteLabel(opts.site) : "",
+      another: false,
+      initialStatus: opts.status,
+      initialDueDays: opts.dueDays ?? null,
+      initialDetails: opts.details,
+      initialRemovesId: opts.removesId ?? null,
+    });
+  }, []);
+
+  /** Open the imaging modal already at a site — the X-ray after a reduction. */
+  const openImagingAt = useCallback((payload: AcceptPayload, site: SiteRef | null) => {
+    setPendingAssessment({ kind: "imaging", another: false, payload, editId: null, initialSite: site, initialDetails: {} });
+  }, []);
+
+  /** Perform, this visit, something an earlier visit planned. */
+  const performPlanned = useCallback((p: { id: string; intentId: number | null; label: string; siteRef: SiteRef | null; details: AssessmentDetails }) => {
+    setPendingIntervention({
+      payload: {
+        intentId: p.intentId ?? 0, type: "modality", label: p.label,
+        refTable: null, refId: null, medicine: null, viaSearch: false, overridden: false,
+      },
+      initialSite: "",
+      another: true,
+      fromPlanned: { id: p.id, siteRef: p.siteRef, details: p.details },
+    });
+  }, []);
+
   const updateMedicine = useCallback((updated: PrescriptionMedicine) => {
     if (stagedMedicine && stagedMedicine.id === updated.id) {
       setStagedMedicine(updated);
@@ -742,35 +1279,67 @@ export function useConsultPlan({
 
   const removeTest = useCallback((label: string) => {
     const target = label.trim().toLowerCase();
-    setSelectedTests((curr) => curr.filter((t) => t.trim().toLowerCase() !== target));
+    // A catalogue name ("X-Ray Knee", from the ranked row's undo) also takes
+    // every site it was ordered at ("X-Ray Knee — Left, AP + Lateral").
+    const goes = (t: string) => {
+      const x = t.trim().toLowerCase();
+      return x === target || isHeadOf(x, target);
+    };
+    const kept = selectedTests.filter((t) => !goes(t));
+    setSelectedTests(kept);
     for (const [intentId, p] of acceptedIntents) {
-      if (p.type === "test" && (p.label.trim().toLowerCase() === target || target.includes(p.label.trim().toLowerCase()))) {
-        releaseIntent(intentId);
-      }
+      if (p.type !== "test") continue;
+      const name = p.label.trim().toLowerCase();
+      if (!(name === target || target.includes(name))) continue;
+      // Released only when no order of it is left — one knee's X-ray
+      // withdrawn is not the other knee's.
+      const stillOrdered = kept.some((t) => {
+        const x = t.trim().toLowerCase();
+        return x === name || isHeadOf(x, name);
+      });
+      if (!stillOrdered) releaseIntent(intentId);
     }
-  }, [acceptedIntents, releaseIntent]);
+  }, [selectedTests, acceptedIntents, releaseIntent]);
 
   const removeDiagnosis = useCallback((label: string) => {
     const target = label.trim().toLowerCase();
-    setDiagnoses((curr) => curr.filter((d) => d.trim().toLowerCase() !== target));
+    // A target is either one line's text ("Fracture — Left knee": that site
+    // only) or the catalogue name ("Fracture", from the ranked row's undo:
+    // every site of it).
+    const hitLines = assessmentLines.filter(
+      (l) => l.text.trim().toLowerCase() === target || l.label.trim().toLowerCase() === target
+    );
+    const keptLines = assessmentLines.filter((l) => !hitLines.includes(l));
+    const removedTexts = new Set([target, ...hitLines.map((l) => l.text.trim().toLowerCase())]);
+    if (hitLines.length) setAssessmentLines(keptLines);
+    setDiagnoses((curr) => curr.filter((d) => !removedTexts.has(d.trim().toLowerCase())));
+
     // Found first, released after: `unconfirmCondition` needs to know which
     // OTHER finding intents are still confirmed so a chip shared by two
     // confirmed diagnoses is not pulled out from under the one that stays.
-    let removedIntentId: number | null = null;
-    const stillConfirmed: number[] = [];
+    // An intent with sites is released only when its LAST site goes — one
+    // fracture healed is not the doctor withdrawing the other.
+    const releasedIds = new Set<number>();
     for (const [intentId, p] of acceptedIntents) {
       if (p.type !== "finding") continue;
-      if (p.label.trim().toLowerCase() === target) removedIntentId = intentId;
-      else stillConfirmed.push(intentId);
+      const byLabel = p.label.trim().toLowerCase() === target
+        || (p.diagnosisText ?? "").trim().toLowerCase() === target;
+      const lostLastSite = hitLines.some((l) => l.intentId === intentId)
+        && !keptLines.some((l) => l.intentId === intentId);
+      if (byLabel || lostLastSite) releasedIds.add(intentId);
     }
-    if (removedIntentId != null) {
-      releaseIntent(removedIntentId);
+    const stillConfirmed: number[] = [];
+    for (const [intentId, p] of acceptedIntents) {
+      if (p.type === "finding" && !releasedIds.has(intentId)) stillConfirmed.push(intentId);
+    }
+    for (const id of releasedIds) {
+      releaseIntent(id);
       // The other half of the fix: taking the diagnosis chip off must also
       // take back whatever it silently put on the Case Sheet — see
       // useLongitudinalRecord.ts's doc comment on this function.
-      unconfirmCondition(removedIntentId, stillConfirmed);
+      unconfirmCondition(id, stillConfirmed);
     }
-  }, [acceptedIntents, releaseIntent, unconfirmCondition]);
+  }, [assessmentLines, acceptedIntents, releaseIntent, unconfirmCondition]);
 
   /**
    * The free-text fallback, chart-local half — §4, 2026-08-24, widened same
@@ -859,18 +1428,6 @@ export function useConsultPlan({
     });
   }, []);
 
-  const removeTherapyLine = useCallback((line: string) => {
-    setTherapyNotes((curr) =>
-      curr.split("\n").map((l) => l.trim()).filter((l) => l && l !== line).join("\n")
-    );
-    // Releasing the intent matters as much here as it does for advice: a
-    // therapy taken off the plan must stop counting as accepted, or the
-    // decision log learns that the doctor wanted something they removed.
-    for (const [intentId, p] of acceptedIntents) {
-      if (p.type === "modality" && p.label === line) releaseIntent(intentId);
-    }
-  }, [acceptedIntents, releaseIntent]);
-
   /**
    * Take ANYTHING already accepted straight back off, from wherever it was
    * accepted — the ranked row itself, or a search hit. §9, 2026-08-24.
@@ -884,11 +1441,11 @@ export function useConsultPlan({
    *
    * A thin dispatcher over the per-type removers that already existed,
    * rather than a sixth implementation of "how do I take this back off":
-   * every one of them is keyed on the LABEL already (removeTest,
-   * removeDiagnosis, removeAdviceLine, removeTherapyLine), which is exactly
-   * what a ranked/searched row already has in hand. Medicine and exercise are
-   * the two exceptions — their plan lines are keyed on their OWN id, not the
-   * intent id, so this looks that line up first.
+   * most of them are keyed on the LABEL already (removeTest,
+   * removeDiagnosis, removeAdviceLine), which is exactly what a
+   * ranked/searched row already has in hand. Medicine, exercise and
+   * intervention are the exceptions — their plan lines are keyed on their
+   * OWN id, not the intent id, so this looks that line up first.
    */
   const removeAcceptedIntent = useCallback(
     (intentId: number, type: AcceptPayload["type"], label: string) => {
@@ -930,17 +1487,27 @@ export function useConsultPlan({
           else if (intentId !== 0) releaseIntent(intentId);
           break;
         }
-        case "modality":
-          removeTherapyLine(label);
+        case "modality": {
+          // A ranked row's own undo takes off EVERY line this intent added
+          // (see `removeIntervention`'s own comment on why one side alone
+          // does not release the ledger entry) — the row asked for one
+          // decision back, not a choice of which site to keep.
+          const lines = interventionPlan.filter(
+            (l) =>
+              (intentId !== 0 && l.intentId === intentId) ||
+              l.label.trim().toLowerCase() === label.trim().toLowerCase()
+          );
+          lines.forEach((l) => removeIntervention(l.id));
           break;
+        }
         case "impairment":
           if (intentId !== 0) releaseIntent(intentId);
           break;
       }
     },
     [
-      prescription, exercisePlan, removeMedicine, removeTest, removeDiagnosis,
-      removeAdviceLine, removeExercise, removeTherapyLine, releaseIntent,
+      prescription, exercisePlan, interventionPlan, removeMedicine, removeTest, removeDiagnosis,
+      removeAdviceLine, removeExercise, removeIntervention, releaseIntent,
     ]
   );
 
@@ -976,10 +1543,12 @@ export function useConsultPlan({
     [adviceNotes]
   );
 
-  /** Same shape, for what was delivered in the clinic. */
-  const therapyLines = useMemo(
-    () => therapyNotes.split("\n").map((l) => l.trim()).filter(Boolean),
-    [therapyNotes]
+  /** `interventionPlan`, formatted — the one shape the prescription's
+   *  `therapy_notes` column and the print/review surfaces still read.
+   *  Derived, never the source of truth: `interventionPlan` is. */
+  const therapyNotes = useMemo(
+    () => interventionPlan.map(formatIntervention).join("\n"),
+    [interventionPlan]
   );
 
   const selectedMedicine = useMemo(
@@ -1093,9 +1662,13 @@ export function useConsultPlan({
     setSelectedMedicineId(null);
     setSelectedTests([]);
     setDiagnoses([]);
+    setAssessmentLines([]);
+    setPendingAssessment(null);
+    setPendingExercise(null);
     setFollowUpDays(null);
     setAdviceNotes("");
-    setTherapyNotes("");
+    setInterventionPlan([]);
+    setPendingIntervention(null);
     setExercisePlan([]);
     setVisitNotes("");
     resetLedger();
@@ -1106,9 +1679,11 @@ export function useConsultPlan({
     setSelectedTests(draft.selectedTests);
     setSelectedLabName(draft.selectedLabName);
     setDiagnoses(draft.diagnoses);
+    // Drafts saved before assessment lines existed have none.
+    setAssessmentLines((draft.assessmentLines ?? []).filter((l) => draft.diagnoses.includes(l.text)));
     setFollowUpDays(draft.followUpDays);
     setAdviceNotes(draft.adviceNotes);
-    setTherapyNotes(draft.therapyNotes);
+    setInterventionPlan(draft.interventionPlan);
     setExercisePlan(draft.exercisePlan);
     setVisitNotes(draft.visitNotes);
   }, []);
@@ -1120,6 +1695,9 @@ export function useConsultPlan({
     }
     if (diagnoses && diagnoses.length > 0) {
       setDiagnoses(diagnoses);
+      // A repeated diagnosis comes back as plain text; its old site lines
+      // do not describe this visit.
+      setAssessmentLines([]);
     }
     setSelectedMedicineId(null);
     setStagedMedicine(null);
@@ -1146,7 +1724,7 @@ export function useConsultPlan({
     acknowledgedIntents,
 
     adviceLines,
-    therapyLines,
+    interventionPlan,
     exercisePlan,
     reviewAdvice,
     justAdded,
@@ -1161,6 +1739,22 @@ export function useConsultPlan({
     inspectorMedicine,
     confirmPendingMedicine,
     confirmStagedMedicine,
+    medicineBilling,
+    medicineBillingPolicy,
+
+    pendingIntervention,
+    confirmPendingIntervention,
+    cancelPendingIntervention,
+
+    assessmentLines,
+    pendingAssessment,
+    confirmPendingAssessment,
+    cancelPendingAssessment,
+    editAssessmentLine,
+    addAssessmentAt,
+    addCustomAssessmentAt,
+    updateAssessmentDetails,
+    addAnotherAssessmentSite,
 
     handleAcceptIntent,
     handleAcknowledge,
@@ -1175,7 +1769,15 @@ export function useConsultPlan({
     addFreeReferral,
     addFreeAdvice,
     removeAdviceLine,
-    removeTherapyLine,
+    removeIntervention,
+    addAnotherInterventionSite,
+    performPlanned,
+    openIntervention,
+    openImagingAt,
+    pendingExercise,
+    confirmPendingExercise,
+    cancelPendingExercise,
+    editExercise,
     removeAcceptedIntent,
     updateExercise,
     removeExercise,

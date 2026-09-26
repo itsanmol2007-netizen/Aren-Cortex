@@ -44,7 +44,8 @@ import type { FindingSuggestionRule } from "../lib/synapse/examSuggestions";
 import { useClinicalIdentity } from "./useClinicalIdentity";
 import { localDB } from "../lib/offline/db";
 import { syncCatalogue } from "../lib/offline/catalogueSync";
-import { prefetchRecentPatients } from "../lib/offline/patientPrefetch";
+import { prefetchRecentPatients, PREFETCH_START_DELAY_MS } from "../lib/offline/patientPrefetch";
+import { isCatalogueSyncEnabled, isPatientPrefetchEnabled } from "../lib/offline/syncPreference";
 import { rememberIntentVocabulary } from "../lib/offline/offlineIntentSearch";
 
 /** One doctor's whole ruleset snapshot, per the same "shared machine, per-
@@ -107,6 +108,9 @@ export interface UseSynapse {
     error: string | null;
     reloading: boolean;
     reload: () => void;
+    /** Puts one observable into the loaded catalogue at once — a clinic's
+     *  own term, just added — without refetching everything. */
+    addObservable: (o: Observable) => void;
 }
 
 export function useSynapse(): UseSynapse {
@@ -318,10 +322,15 @@ export function useSynapse(): UseSynapse {
         // Doctor-only, matching the role-scoping rule (front desk never
         // reaches useSynapse at all — see App.tsx's single call site).
         if (!ready || !isReal) return;
-        syncCatalogue(hospitalId).catch((e) => {
-            console.warn("Catalogue sync (non-fatal):", e);
+        let cancelled = false;
+        isCatalogueSyncEnabled(doctorId).then((enabled) => {
+            if (cancelled || !enabled) return;
+            syncCatalogue(hospitalId).catch((e) => {
+                console.warn("Catalogue sync (non-fatal):", e);
+            });
         });
-    }, [ready, isReal, hospitalId]);
+        return () => { cancelled = true; };
+    }, [ready, isReal, hospitalId, doctorId]);
 
     useEffect(() => {
         // The 3-month local patient backup — see lib/offline/patientPrefetch.ts.
@@ -330,18 +339,46 @@ export function useSynapse(): UseSynapse {
         // on load AND on reconnect (its own interval-gate keeps a flappy
         // connection from re-walking recent history over and over — see
         // that module's `PREFETCH_INTERVAL_MS`).
+        //
+        // Delayed, not fired the instant identity resolves — a doctor's own
+        // FIRST click after signing in (almost always straight into Patients
+        // or a consult) shares the browser's ~6-connections-per-origin
+        // budget with whatever this walks, and this can be dozens of
+        // patients deep. Measured live, 2026-09-19: opening Patients right
+        // after login left it stuck rendering skeletons for 80+ seconds —
+        // not a CSS bug, a real page load starved of connections by this
+        // background walk racing it for the same pool. A doctor's own
+        // click always deserves the connection more than a backup that has
+        // no deadline; giving the foreground a clear head start is enough
+        // to stop the two from ever colliding in the case that matters most.
         if (!ready || !isReal || !doctorId) return;
         const run = () => {
-            prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
-                console.warn("Patient prefetch (non-fatal):", e);
+            isPatientPrefetchEnabled(doctorId).then((enabled) => {
+                if (!enabled) return;
+                prefetchRecentPatients(hospitalId, doctorId).catch((e) => {
+                    console.warn("Patient prefetch (non-fatal):", e);
+                });
             });
         };
-        run();
-        window.addEventListener("online", run);
-        return () => window.removeEventListener("online", run);
+        const initialDelay = window.setTimeout(run, PREFETCH_START_DELAY_MS);
+        // A reconnect is exactly the other moment a doctor is likely to be
+        // actively waiting on a page right then too — same delay, same
+        // reasoning, not just the cold-start case.
+        const onOnline = () => { window.setTimeout(run, PREFETCH_START_DELAY_MS); };
+        window.addEventListener("online", onOnline);
+        return () => {
+            window.clearTimeout(initialDelay);
+            window.removeEventListener("online", onOnline);
+        };
     }, [ready, isReal, hospitalId, doctorId]);
 
     const reload = useCallback(() => void load(true), [load]);
 
-    return { status, data, error, reloading, reload };
+    const addObservable = useCallback((o: Observable) => {
+        setData((d) => (d && !d.observables.some((x) => x.id === o.id)
+            ? { ...d, observables: [...d.observables, o] }
+            : d));
+    }, []);
+
+    return { status, data, error, reloading, reload, addObservable };
 }

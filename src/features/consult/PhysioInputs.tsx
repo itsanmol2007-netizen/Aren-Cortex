@@ -49,7 +49,8 @@ import { AttachmentsCard } from "./AttachmentsCard";
 import { GoalsCard } from "./GoalsCard";
 import { ExamSummaryStrip } from "./ExamSummaryStrip";
 import { useRovingList } from "../../hooks/useRovingList";
-import { addToStory, removeFromStory, selectedStoryItems } from "./story";
+import { addStoryNote, addToStory, removeFromStory, removeStoryNote, selectedStoryItems, storyNotes } from "./story";
+import type { SiteRef } from "../../lib/body/clinicalSite";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
 import type { TrendVisit } from "./trend";
@@ -61,11 +62,21 @@ import type { MeasureSide } from "../../lib/db/examination";
 
 interface Props {
     observables: Observable[];
+    /** see SpecialtyProfile.preferSystems */
+    preferSystems?: string[];
+    preferDomain?: string;
     onChartSet: Set<string>;
-    onObservableToggle: (o: Observable) => void;
+    onObservableToggle: (o: Observable, opts?: { deferSite?: boolean }) => void;
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
+    /** sited findings — see CaseSheet's FindingSitePrompt */
+    knownSites?: SiteRef[];
+    onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
+    askSiteLabel?: string | null;
+    onAskSiteHandled?: () => void;
+    /** the command bar's where-slot — see ClinicalCommandBar */
+    onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     relatedFindings: Observable[];
@@ -98,20 +109,23 @@ interface Props {
 
     /** What was examined, and where. Opened from the summary strip. */
     examination: ExaminationHook;
-    markedRegions: string[];
-    markedSides: Map<string, MeasureSide | null>;
+    /** every marked body-map site, each side its own */
+    markedSites: { region: string; side: MeasureSide | null }[];
+    /** assessments made at a site, for the body map summary */
+    siteAssessments?: { label: string; site: SiteRef | null }[];
     onOpenBodyMap: () => void;
 }
 
 export function PhysioInputs({
-    observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
+    observables, preferSystems, preferDomain, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
+    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled, onSiteChange,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     anatomicalMeasureKeys, pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
     story, onStoryChange, goals, lastGoalScores, todayGoalScores,
     onGoalScoreChange, onAddGoal, onRetireGoal,
-    examination, markedRegions, markedSides, onOpenBodyMap,
+    examination, markedSites, siteAssessments, onOpenBodyMap,
 }: Props) {
     // Identical to GeneralOpdInputs — see that file's own comment for why
     // this lives here rather than inside CaseSheet or ClinicalCommandBar.
@@ -140,12 +154,17 @@ export function PhysioInputs({
                 before typing — see the file header. */}
             <ClinicalCommandBar
                 observables={observables}
+                preferSystems={preferSystems}
+                preferDomain={preferDomain}
                 onSheet={onChartSet}
                 onToggle={onObservableToggle}
                 story={story}
                 onStoryAdd={(it) => onStoryChange(addToStory(story, it))}
                 onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
+                onStoryNote={(text) => onStoryChange(addStoryNote(story, text))}
                 leadComplaint={leadComplaint}
+                siteKnown={knownSites}
+                onSiteChange={onSiteChange}
                 disabled={disabled}
                 searchRef={searchRef}
                 onEmptyDown={() => relatedRoving.move(1)}
@@ -159,6 +178,10 @@ export function PhysioInputs({
                     onToggle={onObservableToggle}
                     onRemove={onCaseSheetRemove}
                     onRetireCarried={onRetireCarried}
+                    knownSites={knownSites}
+                    onSetFindingSites={onSetFindingSites}
+                    autoOpenSiteLabel={askSiteLabel}
+                    onAutoOpenSiteHandled={onAskSiteHandled}
                     intensities={intensities}
                     onIntensityChange={onIntensityChange}
                     related={relatedFindings}
@@ -168,6 +191,8 @@ export function PhysioInputs({
                     storyChips={storyChips}
                     story={story}
                     onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
+                    storyNotes={storyNotes(story)}
+                    onStoryNoteRemove={(i) => onStoryChange(removeStoryNote(story, i))}
                     onFocusSearch={() => searchRef?.current?.focus()}
                 />
 
@@ -188,30 +213,39 @@ export function PhysioInputs({
                 </div>
             </div>
 
-            {/* One line for the whole anatomical examination. Opens the body
-                map; everything measurable lives in there, next to the joint it
-                was measured on. */}
-            <ExamSummaryStrip
-                exam={examination}
-                markedRegions={markedRegions}
-                markedSides={markedSides}
-                onOpen={onOpenBodyMap}
-                disabled={disabled}
-            />
+            {/* Body map launcher beside Goals, same 60/40 ratio as Case Sheet
+                beside Measurements above (`.cs-row-obj`) — Anmol, 2026-09-23:
+                Goals on its own full-width row was mostly empty vertical
+                space under a short search box; pairing it here uses that
+                space the same way the row above already does, rather than
+                inventing a second layout rule for one card. */}
+            <div className="cs-row cs-row-bodygoal">
+                {/* One line for the whole anatomical examination. Opens the
+                    body map; everything measurable lives in there, next to
+                    the joint it was measured on. */}
+                <ExamSummaryStrip
+                    exam={examination}
+                    markedSites={markedSites}
+                    entries={caseSheetEntries}
+                    assessments={siteAssessments}
+                    onOpen={onOpenBodyMap}
+                    disabled={disabled}
+                />
 
-            {/* Goals sit after the record rather than before it. They are
-                context for the PLAN — what this person wants back — and a
-                physiotherapist writes them once the complaint is on the page,
-                not before the patient has said what is wrong. */}
-            <GoalsCard
-                goals={goals}
-                lastScores={lastGoalScores}
-                todayScores={todayGoalScores}
-                onScoreChange={onGoalScoreChange}
-                onAdd={onAddGoal}
-                onRetire={onRetireGoal}
-                disabled={disabled}
-            />
+                {/* Goals sit after the record rather than before it. They are
+                    context for the PLAN — what this person wants back — and a
+                    physiotherapist writes them once the complaint is on the
+                    page, not before the patient has said what is wrong. */}
+                <GoalsCard
+                    goals={goals}
+                    lastScores={lastGoalScores}
+                    todayScores={todayGoalScores}
+                    onScoreChange={onGoalScoreChange}
+                    onAdd={onAddGoal}
+                    onRetire={onRetireGoal}
+                    disabled={disabled}
+                />
+            </div>
         </>
     );
 }

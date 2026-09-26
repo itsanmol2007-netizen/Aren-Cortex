@@ -213,18 +213,19 @@ export function BlankAddMedicineArt() {
     );
 }
 
-/** Consultation Defaults' own mark (Practice page): the chart Cortex opens
- *  with, at rest — a monitor, unwritten. Neutral slate, the same "hasn't
- *  declared anything of its own" family as `BlankLabArt` — Consultation
- *  Defaults isn't a category with its own hue either (`tone="slate"`). */
-export function BlankConsultDefaultsArt() {
+/** Medicine Pricing's own mark (Practice page): a price tag, unwritten —
+ *  the punched hole and a blank line where a rate would sit. Teal, the same
+ *  tone the dose sheet's own price UI already carries (`.cs-addmed-price-*`
+ *  in consult.css) — money on a medicine reads as this card's established
+ *  hue already, not a new one. */
+export function BlankPricingArt() {
     return (
-        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" aria-hidden="true">
-            <rect x="10" y="7" width="30" height="21" rx="3.5"
-                fill="#fbfcfd" stroke="#c3cad6" strokeWidth="1.7" />
-            <path d="M16.5 13.5h17M16.5 18.5h11" stroke="#dbe1ea" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M25 28v5M19 37h12" stroke="#c3cad6" strokeWidth="1.7" strokeLinecap="round" />
-            <path d="M44 10l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#b7c0cf" />
+        <svg width="52" height="46" viewBox="0 0 52 46" fill="none" aria-hidden="true">
+            <path d="M12 10h16l14 14-16 16-14-14z"
+                fill="#fbfdfc" stroke="#a7ddcb" strokeWidth="1.7" strokeLinejoin="round" />
+            <circle cx="18" cy="16" r="3" fill="#e6f5ee" stroke="#bde0d0" strokeWidth="1.3" />
+            <path d="M22 28h9" stroke="#dbeee6" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M44 8l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z" fill="#8fcdb7" />
         </svg>
     );
 }
@@ -294,6 +295,39 @@ export function BlankHealthArt() {
             <path d="M22 40h8l4-9 6 18 4.5-9H54" stroke="#aab4c4" strokeWidth="1.7"
                 strokeLinecap="round" strokeLinejoin="round" fill="none" />
             <circle cx="54" cy="40" r="2.6" fill="#fbfcfd" stroke="#b7c0cf" strokeWidth="1.6" />
+        </svg>
+    );
+}
+
+/** The empty Exercise Library (Practice page): a dumbbell, unweighted —
+ *  the thing this list fills with (a saved exercise + its default dose), at
+ *  rest. Blue, the "declared clinic default" family `BlankBrandArt` already
+ *  uses — a library entry is exactly that: a declared default, not a
+ *  reading and not the doctor's own free-text (which would be violet). */
+export function BlankExerciseArt() {
+    return (
+        <svg width="54" height="40" viewBox="0 0 54 40" fill="none" aria-hidden="true">
+            <rect x="5" y="13" width="11" height="14" rx="3.5" fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" />
+            <rect x="38" y="13" width="11" height="14" rx="3.5" fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" />
+            <path d="M16 20h22" stroke="#dbe4f5" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M46 4l.75 1.75L48.5 6.5l-1.75.75L46 9l-.75-1.75L43.5 6.5l1.75-.75z" fill="#b9d1f7" />
+        </svg>
+    );
+}
+
+/** The empty Additional Charges catalog (Practice page): a receipt, nothing
+ *  billed to it yet — the perforated bottom edge is the same "ticket" read
+ *  as `BlankPricingArt`'s price tag, just the clinic's own non-medicine
+ *  service list rather than a per-medicine rate. Blue, same family as
+ *  `BlankExerciseArt` just above — a saved catalog entry is a declared
+ *  default either way. */
+export function BlankChargesArt() {
+    return (
+        <svg width="48" height="46" viewBox="0 0 48 46" fill="none" aria-hidden="true">
+            <path d="M13 7h22v27l-4-3-4 3-4-3-4 3-4-3-2 1.5V7z"
+                fill="#fbfcff" stroke="#cdd9ef" strokeWidth="1.6" strokeLinejoin="round" />
+            <path d="M18 15h12M18 20.5h8" stroke="#dbe4f5" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M40 9l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="#b9d1f7" />
         </svg>
     );
 }

@@ -26,6 +26,7 @@ import {
     withTimeout,
     cacheIdentity,
     readCachedIdentity,
+    readAnyCachedIdentity,
     clearCachedIdentity,
 } from "../../lib/auth";
 import type { Identity, IdentityFailure } from "../../lib/auth";
@@ -118,12 +119,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (cancelled) return;
                 const session = data?.session;
                 if (error || !session) {
+                    // `getSession()` reads the stored session locally UNLESS
+                    // its access token is stale, in which case supabase-js
+                    // attempts a network refresh first — offline, that can
+                    // come back as an `error` (or, depending on the failure,
+                    // land in the `catch` below instead) well before
+                    // `resolve()`'s own cached-identity fallback is ever
+                    // reached. Same last-known-good identity `resolve()`
+                    // trusts on a network failure, so a doctor who opens a
+                    // cold tab offline still gets in (Anmol, 2026-09-20:
+                    // "this app generally doesn't open when you are
+                    // offline... whenever you're offline can't reach your
+                    // server").
+                    const cached = readAnyCachedIdentity();
+                    if (cached) {
+                        userIdRef.current = cached.user.id;
+                        setState({ status: "authed", identity: cached, offline: true });
+                        return;
+                    }
                     setState({ status: "anon", notice: null });
                     return;
                 }
                 await resolve(session.user.id);
             } catch {
-                if (!cancelled) setState({ status: "anon", notice: "unreachable" });
+                if (cancelled) return;
+                const cached = readAnyCachedIdentity();
+                if (cached) {
+                    userIdRef.current = cached.user.id;
+                    setState({ status: "authed", identity: cached, offline: true });
+                    return;
+                }
+                setState({ status: "anon", notice: "unreachable" });
             }
         })();
 

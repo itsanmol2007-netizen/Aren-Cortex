@@ -16,16 +16,84 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from "react";
-import { Building2, Clock, Plus, Stethoscope } from "lucide-react";
+import { Building2, Clock, FileSignature, Plus, Sparkles, Stethoscope } from "lucide-react";
 import { PracticeModal } from "../practice/PracticeModal";
-import { Field, FieldRow, FormError, FormNote, HindiNameField, ImagePicker, RemoveButton } from "./ui";
+import { Field, FieldRow, FormError, FormNote, HindiNameField, ImagePicker, RemoveButton, TONE, type Tone } from "./ui";
 import type { CompressedImage } from "../../lib/image/compress";
 import {
     WEEKDAYS, replaceClinicHours, updateClinicProfile, updateDoctorProfile,
     uploadClinicLogo, uploadDoctorAvatar,
     type ClinicDayHours, type ClinicProfilePatch, type DoctorProfilePatch,
 } from "../../lib/db/clinic";
+import { requestPhotoHandoff, type PhotoHandoffField } from "../../lib/db/photoHandoff";
 import type { DBDoctor, DBHospital } from "../../lib/db";
+
+/**
+ * "Remove background" / "Update signature" — hands off to arenode.com's own
+ * crop + background-removal + signature-ink-lift editors rather than
+ * rebuilding any of that here. See lib/db/photoHandoff.ts's header for why
+ * this is the one link this app needs, not a second image pipeline.
+ *
+ * Styled as the same small outlined pill every other photo action here uses
+ * (`ImagePicker`'s own "Change photo" trigger) and placed in that same
+ * action row via its `extraAction` slot, rather than as a bare text link on
+ * its own line below — caught in live testing, 2026-09-19: a plain-text
+ * link with a "— opens in a new tab" caption read as a bolted-on extra,
+ * not one of the app's own controls. The "opens in a new tab" detail still
+ * exists, just as a tooltip rather than visible copy every pill doesn't
+ * carry.
+ *
+ * Opens in a new tab: this modal (and whatever the doctor was doing behind
+ * it) stays exactly where it was. The doctor comes back to Cortex, on the
+ * landing page's own "Save and return to Cortex" button, to the same URL
+ * they left — a reload here, not a lost place in a form.
+ */
+function BetterEditorLink({
+    doctorId, hospitalId, field, tone, label,
+}: {
+    doctorId: string;
+    hospitalId: string;
+    field: PhotoHandoffField;
+    tone: Tone;
+    label: string;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const open = async () => {
+        if (busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+            const url = await requestPhotoHandoff({
+                doctorId, hospitalId, field, returnUrl: window.location.href,
+            });
+            window.open(url, "_blank", "noopener,noreferrer");
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not open the editor.");
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <div className="flex flex-col gap-[2px]">
+            <button
+                type="button"
+                onClick={open}
+                disabled={busy}
+                title="Opens arenode.com's editor in a new tab"
+                className={
+                    "inline-flex cursor-pointer items-center gap-[5px] rounded-full border bg-transparent " +
+                    `px-[10px] py-[5px] text-[11px] font-semibold outline-none transition-colors disabled:opacity-50 ` +
+                    `${TONE[tone].border} ${TONE[tone].text} ${TONE[tone].softHover}`
+                }
+            >
+                <Sparkles size={11} />
+                {busy ? "Opening…" : label}
+            </button>
+            {error && <span className="text-[10.5px] font-medium text-[var(--cs-red)]">{error}</span>}
+        </div>
+    );
+}
 
 /** Empty box → NULL, never `""`. Every consumer downstream (the prescription
  *  renderer's `{clinicAddress && …}` guards among them) already treats null as
@@ -60,9 +128,15 @@ function FormFooter({
 // ── CLINIC INFORMATION ─────────────────────────────────────────────────────
 
 export function EditClinicModal({
-    hospitalId, hospital, onClose, onSaved,
+    hospitalId, doctorId, hospital, onClose, onSaved,
 }: {
     hospitalId: string;
+    /** Only for attributing the "better editor" handoff token — see
+     *  lib/db/photoHandoff.ts. Never written to `hospitals` itself.
+     *  Optional: the admin console opens this same modal with no doctor
+     *  in context at all, and the handoff link (which only a doctor's
+     *  own RLS policy allows minting) simply doesn't render there. */
+    doctorId?: string;
     hospital: DBHospital | null;
     onClose: () => void;
     onSaved: (patch: ClinicProfilePatch) => void;
@@ -164,6 +238,9 @@ export function EditClinicModal({
                         fallbackIcon={<Building2 size={22} />}
                         onPick={(img) => { setLogoPick(img); setLogoRemoved(false); }}
                         onClear={() => { setLogoPick(null); setLogoRemoved(true); }}
+                        extraAction={doctorId && (
+                            <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="logo" tone="blue" label="Remove background" />
+                        )}
                     />
                 </div>
                 <Field id="clin-name" label="Clinic name" value={name} onChange={setName} />
@@ -301,7 +378,29 @@ export function EditDoctorModal({
                         fallbackIcon={<Stethoscope size={22} />}
                         onPick={(img) => { setPhotoPick(img); setPhotoRemoved(false); }}
                         onClear={() => { setPhotoPick(null); setPhotoRemoved(true); }}
+                        extraAction={
+                            <BetterEditorLink doctorId={doctorId} hospitalId={hospitalId} field="avatar" tone="violet" label="Remove background" />
+                        }
                     />
+                </div>
+                {/* No upload surface for this one here — a signature needs
+                    the ink lifted off a photographed page onto a clean
+                    background, which is a real image-processing pipeline
+                    (see arenode.com's own SignatureInput), not a crop box.
+                    The handoff link is the whole feature. */}
+                <div className="flex flex-col gap-[5px]">
+                    <label className="text-[11px] font-semibold text-[var(--cs-muted)]">Signature</label>
+                    <div className="flex items-center gap-[10px]">
+                        <div className="grid h-[44px] w-[76px] flex-none place-items-center overflow-hidden rounded-[10px] border border-[var(--cs-line)] bg-[var(--cs-page)] text-[var(--cs-faint)]">
+                            {doctor?.signature_image_url
+                                ? <img src={doctor.signature_image_url} alt="" className="block h-full w-full object-contain px-1" />
+                                : <FileSignature size={18} />}
+                        </div>
+                        <BetterEditorLink
+                            doctorId={doctorId} hospitalId={hospitalId} field="signature" tone="violet"
+                            label={doctor?.signature_image_url ? "Update signature" : "Add signature"}
+                        />
+                    </div>
                 </div>
                 <Field id="clin-doc-name" label="Name" value={name} onChange={setName} />
                 {/* Confirmed ONCE, stored forever — see the matching field on

@@ -702,6 +702,14 @@ export interface BillingPolicy {
     gstEnabled: boolean;
     gstPercent: number;
     allowDiscount: boolean;
+    /** Whether this clinic bills the medicine it dispenses, on top of the
+     *  consultation fee — see lib/db/medicinePricing.ts and the
+     *  `20260919_medicine_dispensing_billing.sql` migration. Off by default;
+     *  a clinic that never turns it on sees no change anywhere. */
+    medicineBillingEnabled: boolean;
+    /** Only meaningful when `medicineBillingEnabled` is true — reuses this
+     *  same policy's `gstPercent`, never a second rate. */
+    medicineGstEnabled: boolean;
 }
 
 export interface FeeSettings {
@@ -722,7 +730,7 @@ export async function fetchFeeSettings(hospitalId: string): Promise<FeeSettings>
 async function fetchFeeSettingsFromNetwork(hospitalId: string): Promise<FeeSettings> {
     const [hospitalRes, doctorsRes] = await Promise.all([
         supabase.from("hospitals")
-            .select("currency, gst_enabled, gst_percent, allow_discount")
+            .select("currency, gst_enabled, gst_percent, allow_discount, medicine_billing_enabled, medicine_gst_enabled")
             .eq("id", hospitalId).maybeSingle(),
         supabase.from("doctors")
             .select("id, name, specialization, consultation_fee, follow_up_fee")
@@ -742,6 +750,8 @@ async function fetchFeeSettingsFromNetwork(hospitalId: string): Promise<FeeSetti
             gstEnabled: h?.gst_enabled ?? false,
             gstPercent: Number(h?.gst_percent ?? 18),
             allowDiscount: h?.allow_discount ?? true,
+            medicineBillingEnabled: h?.medicine_billing_enabled ?? false,
+            medicineGstEnabled: h?.medicine_gst_enabled ?? false,
         },
         doctors: (doctorsRes.data ?? []).map((d) => ({
             id: d.id,
@@ -775,6 +785,8 @@ export async function updateBillingPolicy(
     if (policy.gstEnabled !== undefined) patch.gst_enabled = policy.gstEnabled;
     if (policy.gstPercent !== undefined) patch.gst_percent = policy.gstPercent;
     if (policy.allowDiscount !== undefined) patch.allow_discount = policy.allowDiscount;
+    if (policy.medicineBillingEnabled !== undefined) patch.medicine_billing_enabled = policy.medicineBillingEnabled;
+    if (policy.medicineGstEnabled !== undefined) patch.medicine_gst_enabled = policy.medicineGstEnabled;
     if (!Object.keys(patch).length) return;
 
     const { error } = await supabase.from("hospitals").update(patch).eq("id", hospitalId);

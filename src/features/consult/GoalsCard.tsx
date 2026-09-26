@@ -23,14 +23,28 @@
 // THE SCORE IS NOT GONE. Deleting it would delete the trend, and the trend is
 // the entire reason a goal is a schema object rather than a note. It moved
 // one click in: the chip shows the current score when there is one, and
-// opens a compact 0-10 picker when pressed. `lastScores` / `todayScores`
-// still come from `useVisitStory`, and this component still only renders and
-// emits events — same read/write split every other card in this consult uses.
+// opens a picker when pressed. `lastScores` / `todayScores` still come from
+// `useVisitStory`, and this component still only renders and emits events —
+// same read/write split every other card in this consult uses.
+//
+// ── A modal, not a popover (2026-09-23)
+//
+// The chip used to open `ScorePicker` inline, anchored under the chip. Anmol,
+// looking at the card: "how much fucked up this section is looking?" — a
+// full-width card whose content ended right after the search box, and a
+// popover as the only way into a goal's detail, was the two complaints
+// together. Both come from the same fix: goals get the rest of this card's
+// designed shell, like everything else in the consult — a real modal on
+// click (`.cs-addmed-*`'s shape, rose as the accent: colour.md's own meaning
+// for rose is "reported (by the patient)", and a goal is the one thing in
+// this whole schema the patient reports in their own words) and a reserved
+// row of chip space so the card never reads as cut off short.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useRef, useState } from "react";
-import { Check, Plus, Search, Target, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Search, Target, X } from "lucide-react";
 import type { PatientGoal, GoalStatus } from "../../lib/db/story";
+import { useOverlayFocus } from "../../hooks/useOverlayFocus";
 
 interface Props {
     goals: PatientGoal[];
@@ -61,11 +75,18 @@ const GOAL_SUGGESTIONS = [
     "Get up from a chair unaided",
 ];
 
-/** The 0-10 picker, opened from a chip. Segmented rather than a range input:
- *  PSFS is an ordinal grade the patient states, so it is picked, not dragged
- *  — the same reasoning `ExaminationCard`'s 0-5 strength segment already
- *  applies to MMT. */
-function ScorePicker({
+/** Chips beyond this many are behind "+N more" — Anmol: "I don't think
+ *  someone have like 14 goals... a simple more option." */
+const VISIBLE_CAP = 4;
+
+/**
+ * The 0-10 picker, now a real modal (`.cs-addmed-*`'s shape) rather than a
+ * popover anchored to the chip. Segmented rather than a range input: PSFS is
+ * an ordinal grade the patient states, so it is picked, not dragged — the
+ * same reasoning `ExaminationCard`'s 0-5 strength segment already applies to
+ * MMT.
+ */
+function GoalDetailModal({
     goal, before, shown, onScoreChange, onRetire, onClose, disabled,
 }: {
     goal: PatientGoal;
@@ -76,53 +97,71 @@ function ScorePicker({
     onClose: () => void;
     disabled?: boolean;
 }) {
-    const ref = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    useOverlayFocus(panelRef, true);
 
     useEffect(() => {
-        const away = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") { e.preventDefault(); onClose(); }
         };
-        const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-        document.addEventListener("mousedown", away);
-        document.addEventListener("keydown", esc);
-        return () => {
-            document.removeEventListener("mousedown", away);
-            document.removeEventListener("keydown", esc);
-        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
     }, [onClose]);
 
     return (
-        <div className="cs-goal-pop" ref={ref} role="dialog" aria-label={`Score for ${goal.activity}`}>
-            <p className="cs-goal-pop-q">
-                How well can they do this today?
-                {before !== null && before !== undefined && (
-                    <span className="cs-goal-pop-was">was {before}/10</span>
-                )}
-            </p>
-            <div className="cs-goal-scale" role="group" aria-label="0 to 10">
-                {Array.from({ length: 11 }, (_, n) => (
-                    <button
-                        key={n}
-                        type="button"
-                        disabled={disabled}
-                        className={`cs-goal-tick${shown === n ? " is-on" : ""}`}
-                        aria-pressed={shown === n}
-                        onClick={() => { onScoreChange(n); onClose(); }}
-                    >
-                        {n}
+        <div className="cs-addmed" role="dialog" aria-modal="true" aria-label={`Score for ${goal.activity}`}>
+            <button className="cs-addmed-scrim" type="button" onClick={onClose} aria-label="Close" />
+            <div className="cs-addmed-panel cs-goal-modal" ref={panelRef} tabIndex={-1}>
+                <div className="cs-addmed-topstripe cs-goal-modal-stripe" />
+
+                <div className="cs-addmed-head">
+                    <span className="cs-glyph is-rose"><Target size={16} /></span>
+                    <div className="cs-addmed-title">
+                        <span className="cs-addmed-eyebrow cs-goal-modal-eyebrow">Patient goal</span>
+                        <strong>{goal.activity}</strong>
+                    </div>
+                    <button className="cs-addmed-x" type="button" onClick={onClose} aria-label="Close">
+                        <X size={16} />
                     </button>
-                ))}
-            </div>
-            <div className="cs-goal-pop-foot">
-                <span>0 = can't do it · 10 = back to normal</span>
-                <span className="cs-goal-pop-actions">
-                    <button type="button" onClick={() => { onRetire("achieved"); onClose(); }}>
-                        Achieved
-                    </button>
-                    <button type="button" onClick={() => { onRetire("abandoned"); onClose(); }}>
+                </div>
+
+                <div className="cs-addmed-body">
+                    <section className="cs-addmed-sec">
+                        <p className="cs-goal-pop-q">
+                            How well can they do this today?
+                            {before !== null && before !== undefined && (
+                                <span className="cs-goal-pop-was">was {before}/10</span>
+                            )}
+                        </p>
+                        <div className="cs-goal-scale" role="group" aria-label="0 to 10">
+                            {Array.from({ length: 11 }, (_, n) => (
+                                <button
+                                    key={n}
+                                    type="button"
+                                    disabled={disabled}
+                                    className={`cs-goal-tick${shown === n ? " is-on" : ""}`}
+                                    aria-pressed={shown === n}
+                                    onClick={() => onScoreChange(n)}
+                                >
+                                    {n}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="cs-goal-pop-foot">
+                            <span>0 = can't do it · 10 = back to normal</span>
+                        </div>
+                    </section>
+                </div>
+
+                <div className="cs-addmed-foot">
+                    <button className="cs-addmed-cancel" type="button" onClick={() => onRetire("abandoned")}>
                         Remove
                     </button>
-                </span>
+                    <button className="cs-addmed-confirm cs-goal-modal-confirm" type="button" onClick={() => onRetire("achieved")}>
+                        <Check size={15} />
+                        Mark achieved
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -133,7 +172,8 @@ export function GoalsCard({
 }: Props) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
-    const [openGoal, setOpenGoal] = useState<number | null>(null);
+    const [openGoalId, setOpenGoalId] = useState<number | null>(null);
+    const [showAll, setShowAll] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const q = query.trim();
@@ -178,26 +218,21 @@ export function GoalsCard({
         }
     };
 
+    const openGoal = useMemo(() => goals.find((g) => g.id === openGoalId) ?? null, [goals, openGoalId]);
+    const visibleGoals = showAll ? goals : goals.slice(0, VISIBLE_CAP);
+    const hiddenCount = goals.length - visibleGoals.length;
+
     return (
         <section className="cs-card cs-goals" aria-label="Goals">
-            <div className="cs-card-head">
-                <span className="cs-card-num" aria-hidden="true">2</span>
-                <span className="cs-card-title">
+            {/* Title and search share ONE row — Anmol: "the simple heading
+                just beside the search bar... literally just beside it". No
+                explanatory subtitle (a doctor knows what a goal is) and no
+                separate "+ Goal" button — the search field IS the add. */}
+            <div className="cs-goals-top">
+                <h2 className="cs-card-title cs-goals-title">
+                    <span className="cs-glyph is-rose"><Target size={14} /></span>
                     Goals
-                    <em>What does the patient want to achieve?</em>
-                </span>
-                <button
-                    type="button"
-                    className="cs-goal-headbtn"
-                    disabled={disabled}
-                    onClick={() => inputRef.current?.focus()}
-                >
-                    <Plus size={13} aria-hidden="true" />
-                    Goal
-                </button>
-            </div>
-
-            <div className="cs-goals-body">
+                </h2>
                 <div className="cs-goalx-searchwrap">
                     <div className="cs-goalx-search">
                         <Search size={15} aria-hidden="true" />
@@ -251,63 +286,63 @@ export function GoalsCard({
                         </div>
                     )}
                 </div>
+            </div>
 
-                {goals.length > 0 && (
-                    <div className="cs-goalx-chips">
-                        {goals.map((g, i) => {
-                            // First visit for this goal: nothing to compare against
-                            // yet, so the baseline itself is the "before".
-                            const before = lastScores.get(g.id) ?? g.baselineScore;
-                            const today = todayScores.get(g.id);
-                            const scored = today ?? before ?? undefined;
-                            return (
-                                <span key={g.id} className="cs-goal-chipwrap">
+            {/* One slim reserved row for the goal buttons — present even when
+                empty, so the card keeps its height; "+N more" past four. */}
+            <div className="cs-goalx-chips">
+                    {goals.length === 0 ? (
+                        <p className="cs-goalx-empty">No goals yet</p>
+                    ) : (
+                        <>
+                            {visibleGoals.map((g, i) => {
+                                // First visit for this goal: nothing to compare against
+                                // yet, so the baseline itself is the "before".
+                                const before = lastScores.get(g.id) ?? g.baselineScore;
+                                const today = todayScores.get(g.id);
+                                const scored = today ?? before ?? undefined;
+                                return (
                                     <button
+                                        key={g.id}
                                         type="button"
-                                        className={`cs-goalx-chip is-press${openGoal === g.id ? " is-open" : ""}`}
+                                        className="cs-goalx-chip is-press"
                                         disabled={disabled}
                                         aria-haspopup="dialog"
-                                        aria-expanded={openGoal === g.id}
-                                        onClick={() => setOpenGoal((cur) => (cur === g.id ? null : g.id))}
+                                        onClick={() => setOpenGoalId(g.id)}
                                     >
                                         {today !== undefined
-                                            ? <Check size={13} className="cs-goalx-chip-tick" aria-hidden="true" />
-                                            : <Target size={13} className="cs-goalx-chip-aim" aria-hidden="true" />}
-                                        <span className="cs-goalx-chip-text">
-                                            <b>{g.activity}</b>
-                                            <em>
-                                                {scored !== undefined
-                                                    ? `${scored}/10${today === undefined ? " · last visit" : ""}`
-                                                    : i === 0 ? "Primary" : "Not scored yet"}
-                                            </em>
-                                        </span>
+                                            ? <Check size={12} className="cs-goalx-chip-tick" aria-hidden="true" />
+                                            : <Target size={12} className="cs-goalx-chip-aim" aria-hidden="true" />}
+                                        <b>{g.activity}</b>
+                                        <em>
+                                            {scored !== undefined
+                                                ? `${scored}/10`
+                                                : i === 0 ? "Primary" : "—"}
+                                        </em>
                                     </button>
-                                    {openGoal === g.id && (
-                                        <ScorePicker
-                                            goal={g}
-                                            before={before}
-                                            shown={today}
-                                            onScoreChange={(score) => onScoreChange(g.id, score)}
-                                            onRetire={(status) => onRetire(g.id, status)}
-                                            onClose={() => setOpenGoal(null)}
-                                            disabled={disabled}
-                                        />
-                                    )}
-                                </span>
-                            );
-                        })}
-                        <button
-                            type="button"
-                            className="cs-goalx-more"
-                            disabled={disabled}
-                            onClick={() => inputRef.current?.focus()}
-                        >
-                            <Plus size={13} aria-hidden="true" />
-                            Add another goal
-                        </button>
-                    </div>
-                )}
+                                );
+                            })}
+                            {hiddenCount > 0 && (
+                                <button type="button" className="cs-goalx-showmore" onClick={() => setShowAll(true)}>
+                                    <ChevronDown size={12} aria-hidden="true" />
+                                    {hiddenCount} more
+                                </button>
+                            )}
+                        </>
+                    )}
             </div>
+
+            {openGoal && (
+                <GoalDetailModal
+                    goal={openGoal}
+                    before={lastScores.get(openGoal.id) ?? openGoal.baselineScore}
+                    shown={todayScores.get(openGoal.id)}
+                    onScoreChange={(score) => onScoreChange(openGoal.id, score)}
+                    onRetire={(status) => { onRetire(openGoal.id, status); setOpenGoalId(null); }}
+                    onClose={() => setOpenGoalId(null)}
+                    disabled={disabled}
+                />
+            )}
         </section>
     );
 }

@@ -39,6 +39,7 @@ import {
 import type { CompanionEdge } from "../synapse/companions";
 import type { MeasurementRow } from "../synapse/consultInput";
 import type { FindingSuggestionRule } from "../synapse/examSuggestions";
+import type { SiteRef } from "../body/clinicalSite";
 import { offlineCompositionBrands } from "../offline/offlineBrands";
 import { getCatalogueSyncState } from "../offline/catalogueSync";
 import { requireOnlineFor } from "../offline/onlineOnly";
@@ -114,12 +115,14 @@ export interface Observable {
     searchText: string;
     /** body-system grouping for the picker. UI only. */
     system: string;
+    /** happens at a place on the body ("Joint swelling" → which joint) */
+    localizable: boolean;
 }
 
 export async function fetchObservables(): Promise<Observable[]> {
     const { data, error } = await supabase
         .from("observables")
-        .select("id, slug, label, kind, domains, search_text, system")
+        .select("id, slug, label, kind, domains, search_text, system, localizable")
         .eq("is_active", true)
         // 373 today and expected to grow; Supabase silently caps an unbounded
         // select at 1000, so the ceiling is stated rather than discovered.
@@ -134,7 +137,43 @@ export async function fetchObservables(): Promise<Observable[]> {
         searchText: o.search_text ?? "",
         // a null here must not become an unlabelled group
         system: o.system ?? "general",
+        localizable: !!o.localizable,
     }));
+}
+
+/**
+ * A clinic's own word for something the catalogue does not have
+ * ("Medial joint line tenderness"), added from the body map's "not in the
+ * list" row. `add_clinic_observable` returns the existing row when the
+ * catalogue or the clinic already has that label, so typing it twice never
+ * makes two. Owned by the clinic (seen by it alone) and saved, printed and
+ * searched like any other observable; nothing ranks on it.
+ */
+export async function addClinicObservable(opts: {
+    label: string;
+    kind: "symptom" | "finding";
+    domain?: string | null;
+    system?: string | null;
+}): Promise<Observable> {
+    const { data, error } = await supabase.rpc("add_clinic_observable", {
+        p_label: opts.label,
+        p_kind: opts.kind,
+        p_domain: opts.domain ?? null,
+        p_system: opts.system ?? null,
+    });
+    if (error) throw new Error(`add_clinic_observable: ${error.message}`);
+    const o = (Array.isArray(data) ? data[0] : data) as any;
+    if (!o) throw new Error("add_clinic_observable: no row returned");
+    return {
+        id: Number(o.id),
+        slug: o.slug,
+        label: o.label,
+        kind: o.kind,
+        domains: (o.domains ?? []) as string[],
+        searchText: o.search_text ?? "",
+        system: o.system ?? "general",
+        localizable: !!o.localizable,
+    };
 }
 
 // ============================================================
@@ -328,6 +367,8 @@ export interface PatientCondition {
     status: "active" | "resolved" | "refuted";
     confirmedAt: string;
     visitId: string | null;
+    /** "since when" — see `onset_note` on the table and `conditionDetail.ts`. */
+    onsetNote: string | null;
 }
 
 /**
@@ -341,7 +382,7 @@ export interface PatientCondition {
 export async function loadPatientConditions(patientId: string): Promise<PatientCondition[]> {
     const { data, error } = await supabase
         .from("patient_conditions")
-        .select("observable_id, status, confirmed_at, visit_id")
+        .select("observable_id, status, confirmed_at, visit_id, onset_note")
         .eq("patient_id", patientId)
         .eq("status", "active");
     if (error) throw new Error(`patient_conditions: ${error.message}`);
@@ -351,6 +392,7 @@ export async function loadPatientConditions(patientId: string): Promise<PatientC
         status: r.status,
         confirmedAt: r.confirmed_at,
         visitId: r.visit_id,
+        onsetNote: r.onset_note ?? null,
     }));
 }
 
@@ -444,6 +486,31 @@ export async function upsertPatientCondition(opts: {
             { onConflict: "patient_id,observable_id" }
         );
     if (error) throw new Error(`patient_conditions upsert: ${error.message}`);
+}
+
+/**
+ * Records "since when" on an already-standing condition — the `OnsetPrompt`
+ * in CaseSheet.tsx, for the curated detail-worthy history chips (Previous
+ * MI, PCI, CABG, pacemaker, ICD). A plain update rather than routing through
+ * `upsertPatientCondition`: the row already exists (the chip earning this
+ * button was just confirmed or carried forward), and re-running the full
+ * upsert would also reset `confirmed_at`/`source`, which is not what typing
+ * a date is doing.
+ *
+ * Non-fatal by rule, same as `upsertPatientCondition` — a missed detail is
+ * not a reason to interrupt the consult.
+ */
+export async function setPatientConditionOnsetNote(opts: {
+    patientId: string;
+    observableId: number;
+    onsetNote: string;
+}): Promise<void> {
+    const { error } = await supabase
+        .from("patient_conditions")
+        .update({ onset_note: opts.onsetNote, updated_at: new Date().toISOString() })
+        .eq("patient_id", opts.patientId)
+        .eq("observable_id", opts.observableId);
+    if (error) throw new Error(`patient_conditions onset_note: ${error.message}`);
 }
 
 // ============================================================
@@ -975,7 +1042,8 @@ export function compositionIdsOf(
 }
 
 export interface AddMedicineResult {
-    compositionId: number;
+    // null for a composition-less add — see `addMedicine`'s `compositionNote`.
+    compositionId: number | null;
     medicine: Medicine;
 }
 
@@ -995,6 +1063,12 @@ export interface AddMedicineResult {
  * to wait on `mv_composition_brand`'s refresh to do that: the refresh is what
  * makes the medicine reachable on the *next* search, by anyone, not what this
  * consult needs right now.
+ *
+ * `compositionIds` may now be empty — the RPC no longer requires a linked
+ * composition (doctrine rule 22 relaxed: a real medicine with no catalogued
+ * salt must still be addable, not left for the advice free-text box). In
+ * that case pass `compositionNote`, the doctor's own free-text description of
+ * the salt, and the RPC returns exactly one row with `composition_id: null`.
  */
 export async function addMedicine(opts: {
     name: string;
@@ -1002,6 +1076,7 @@ export async function addMedicine(opts: {
     route?: string | null;
     strengthMg?: number | null;
     manufacturer?: string | null;
+    compositionNote?: string | null;
 }): Promise<AddMedicineResult[]> {
     // Online-only, deliberately — see lib/offline/onlineOnly.ts's header.
     requireOnlineFor("Adding a new medicine");
@@ -1011,6 +1086,7 @@ export async function addMedicine(opts: {
         p_route: opts.route ?? null,
         p_strength_mg: opts.strengthMg ?? null,
         p_manufacturer: opts.manufacturer ?? null,
+        p_composition_note: opts.compositionNote ?? null,
     });
     // The RPC's RAISE EXCEPTION text ("a medicine named … already exists",
     // "unknown composition id(s): …", "no doctor profile linked to this
@@ -1019,13 +1095,14 @@ export async function addMedicine(opts: {
     if (error) throw new Error(error.message);
 
     return (data ?? []).map((r: any) => ({
-        compositionId: Number(r.composition_id),
+        compositionId: r.composition_id == null ? null : Number(r.composition_id),
         medicine: {
             id: Number(r.medicine_id),
-            compositionId: Number(r.composition_id),
+            compositionId: r.composition_id == null ? null : Number(r.composition_id),
             name: r.name as string,
             form: r.route as string | null,
             strengthMg: r.strength_mg == null ? null : Number(r.strength_mg),
+            compositionNote: r.composition_note ?? null,
             prescriptionCount: 0,
             isClinicDefault: false,
             // no catalogueRank — a brand-new product carries no lookup-order
@@ -1738,7 +1815,16 @@ const DB_SOURCE: Record<"doctor" | "confirmed" | "carried" | "reception", string
     reception: "reception",
 };
 
-export async function persistVisitInput(opts: {
+/**
+ * One in-flight write per visit — see `persistVisitInput`'s own comment for
+ * the race this closes. A later call for the same visit is chained onto
+ * whatever is already running rather than dispatched alongside it, and
+ * `.catch(() => {})` on the link (not the caller's own promise) keeps one
+ * failed write from poisoning the chain for every write after it.
+ */
+const visitInputQueue = new Map<string, Promise<void>>();
+
+export interface PersistVisitInputOpts {
     visitId: string;
     observableIds: number[];
     measurements: MeasurementRow[];
@@ -1763,7 +1849,29 @@ export async function persistVisitInput(opts: {
      * zero days would mean "started today" and is not the same thing.
      */
     durations?: Map<number, number>;
-}): Promise<void> {
+    /**
+     * Where each local finding was found ("Joint swelling" at the right
+     * knee). Replaced wholesale like the observations themselves; left
+     * undefined, the visit's stored sites are not touched at all.
+     */
+    sites?: Map<number, SiteRef[]>;
+}
+
+/**
+ * The write itself — DELETE then INSERT, because a full replace is the only
+ * honest way to also drop an observable the doctor just un-ticked. Never
+ * call this directly: two calls for the SAME visit, close enough together
+ * that the first one's round trip hasn't finished, interleave their delete
+ * and insert and the second's insert dies on
+ * `visit_observations_visit_id_observable_id_key` — caught live 2026-09-19,
+ * reproducing right after a page reload (a fresh reconnect is exactly the
+ * slow-network case where the 600ms debounce upstream in
+ * useConsultIntelligence.ts no longer guarantees the PREVIOUS call has
+ * actually landed before the next one fires). `persistVisitInput` below is
+ * the real export — it serialises calls per visit so this body never
+ * overlaps itself.
+ */
+async function persistVisitInputNow(opts: PersistVisitInputOpts): Promise<void> {
     await supabase.from("visit_observations").delete().eq("visit_id", opts.visitId);
     if (opts.observableIds.length) {
         const { error } = await supabase.from("visit_observations").insert(
@@ -1778,12 +1886,34 @@ export async function persistVisitInput(opts: {
         if (error) throw new Error(`visit_observations: ${error.message}`);
     }
 
+    if (opts.sites) {
+        await supabase.from("visit_observation_sites").delete().eq("visit_id", opts.visitId);
+        const kept = new Set(opts.observableIds);
+        const rows = [...opts.sites.entries()]
+            .filter(([id]) => kept.has(id))
+            .flatMap(([observable_id, sites]) => sites.map((s) => ({
+                visit_id: opts.visitId,
+                observable_id,
+                region: s.region,
+                side: s.side,
+                aspect: s.aspect,
+            })));
+        if (rows.length) {
+            const { error } = await supabase.from("visit_observation_sites").insert(rows);
+            if (error) throw new Error(`visit_observation_sites: ${error.message}`);
+        }
+    }
+
     if (opts.measurements.length) {
         const { error } = await supabase.from("visit_measurements").upsert(
-            // A measurement is either a number or a string, never both. Blood
-            // group is the only text one today; the column has existed for it
-            // since the schema was built, and writing it into `value_num` would
-            // fail the numeric cast rather than degrade quietly.
+            // Usually a measurement is a number OR a string, never both —
+            // blood group is the text-only case, and writing it into
+            // `value_num` would fail the numeric cast rather than degrade
+            // quietly. The one exception is a CUSTOM_* key (the ad hoc
+            // measurement fallback, consultInput.ts): there `value_text`
+            // carries the doctor's own label ALONGSIDE a real `value_num`,
+            // because nothing else in this row has anywhere to put it. See
+            // that file's own comment for why.
             opts.measurements.map((m) => ({
                 visit_id: opts.visitId,
                 measure_key: m.measureKey,
@@ -1795,6 +1925,29 @@ export async function persistVisitInput(opts: {
         );
         if (error) throw new Error(`visit_measurements: ${error.message}`);
     }
+}
+
+/**
+ * The real export. Chains onto whatever write is already in flight for this
+ * SAME visit, so `persistVisitInputNow`'s delete-then-insert never overlaps
+ * itself — see that function's own comment for the bug this closes. A
+ * failed link does not poison the chain: the `.catch` here is on what the
+ * NEXT call waits on, not on what this call's own caller awaits, so one bad
+ * write still surfaces to ITS caller while the queue moves on.
+ */
+export function persistVisitInput(opts: PersistVisitInputOpts): Promise<void> {
+    const prior = visitInputQueue.get(opts.visitId) ?? Promise.resolve();
+    const settled = prior.catch(() => {});
+    const run = settled.then(() => persistVisitInputNow(opts));
+    const link = run.catch(() => {});
+    visitInputQueue.set(opts.visitId, link);
+    // Tidy up once nothing is queued behind this call — a clinic's session
+    // runs many visits in a day, and a Map entry per visit that nothing ever
+    // removed would grow for as long as the tab stays open.
+    link.finally(() => {
+        if (visitInputQueue.get(opts.visitId) === link) visitInputQueue.delete(opts.visitId);
+    });
+    return run;
 }
 
 // ============================================================
@@ -2061,6 +2214,27 @@ export interface PreferredLab {
     contactNote: string | null;
     isDefault: boolean;
     sortOrder: number;
+    /** where an investigation order can be sent (optional) */
+    whatsappPhone: string | null;
+    /** plain address / landmark, shown to the patient */
+    address: string | null;
+    /** a Google Maps link the doctor pasted; the patient's Navigate button */
+    mapsUrl: string | null;
+}
+
+const LAB_COLUMNS = "id, name, contact_note, is_default, sort_order, whatsapp_phone, address, maps_url";
+
+function labFromRow(r: any): PreferredLab {
+    return {
+        id: Number(r.id),
+        name: r.name,
+        contactNote: r.contact_note ?? null,
+        isDefault: !!r.is_default,
+        sortOrder: Number(r.sort_order ?? 0),
+        whatsappPhone: r.whatsapp_phone ?? null,
+        address: r.address ?? null,
+        mapsUrl: r.maps_url ?? null,
+    };
 }
 
 const preferredLabsCacheKey = (doctorId: string) => `preferred_labs.${doctorId}`;
@@ -2077,18 +2251,12 @@ export async function loadPreferredLabs(doctorId: string): Promise<PreferredLab[
 async function loadPreferredLabsFromNetwork(doctorId: string): Promise<PreferredLab[]> {
     const { data, error } = await supabase
         .from("doctor_preferred_labs")
-        .select("id, name, contact_note, is_default, sort_order")
+        .select(LAB_COLUMNS)
         .eq("doctor_id", doctorId)
         .order("sort_order", { ascending: true })
         .order("id", { ascending: true });
     if (error) throw new Error(`doctor_preferred_labs (load): ${error.message}`);
-    return (data ?? []).map((r: any) => ({
-        id: Number(r.id),
-        name: r.name,
-        contactNote: r.contact_note ?? null,
-        isDefault: !!r.is_default,
-        sortOrder: Number(r.sort_order ?? 0),
-    }));
+    return (data ?? []).map(labFromRow);
 }
 
 /** Just the default, for Consult's plan-rail prompt — one row, not the list. */
@@ -2102,18 +2270,12 @@ export async function loadDefaultPreferredLab(doctorId: string): Promise<Preferr
 async function loadDefaultPreferredLabFromNetwork(doctorId: string): Promise<PreferredLab | null> {
     const { data, error } = await supabase
         .from("doctor_preferred_labs")
-        .select("id, name, contact_note, is_default, sort_order")
+        .select(LAB_COLUMNS)
         .eq("doctor_id", doctorId)
         .eq("is_default", true)
         .maybeSingle();
     if (error) throw new Error(`doctor_preferred_labs (default): ${error.message}`);
-    return !data ? null : {
-        id: Number(data.id),
-        name: data.name,
-        contactNote: data.contact_note ?? null,
-        isDefault: true,
-        sortOrder: Number(data.sort_order ?? 0),
-    };
+    return !data ? null : labFromRow(data);
 }
 
 export async function addPreferredLab(opts: {
@@ -2121,6 +2283,9 @@ export async function addPreferredLab(opts: {
     hospitalId: string;
     name: string;
     contactNote?: string | null;
+    whatsappPhone?: string | null;
+    address?: string | null;
+    mapsUrl?: string | null;
     /** first lab a doctor adds becomes the default automatically — see call site */
     makeDefault?: boolean;
 }): Promise<PreferredLab> {
@@ -2152,19 +2317,58 @@ export async function addPreferredLab(opts: {
             hospital_id: opts.hospitalId,
             name,
             contact_note: opts.contactNote?.trim() || null,
+            whatsapp_phone: opts.whatsappPhone?.trim() || null,
+            address: opts.address?.trim() || null,
+            maps_url: opts.mapsUrl?.trim() || null,
             is_default: !!opts.makeDefault,
             sort_order: nextOrder,
         })
-        .select("id, name, contact_note, is_default, sort_order")
+        .select(LAB_COLUMNS)
         .single();
     if (error) throw new Error(`doctor_preferred_labs (add): ${error.message}`);
-    return {
-        id: Number(data.id),
-        name: data.name,
-        contactNote: data.contact_note ?? null,
-        isDefault: !!data.is_default,
-        sortOrder: Number(data.sort_order ?? 0),
-    };
+    return labFromRow(data);
+}
+
+/** The lab's contact and place, edited after it was added. */
+export async function updatePreferredLab(id: number, fields: {
+    name?: string;
+    whatsappPhone?: string | null;
+    address?: string | null;
+    mapsUrl?: string | null;
+}): Promise<PreferredLab> {
+    const patch: Record<string, unknown> = {};
+    if (fields.name !== undefined) patch.name = fields.name.trim();
+    if (fields.whatsappPhone !== undefined) patch.whatsapp_phone = fields.whatsappPhone?.trim() || null;
+    if (fields.address !== undefined) patch.address = fields.address?.trim() || null;
+    if (fields.mapsUrl !== undefined) patch.maps_url = fields.mapsUrl?.trim() || null;
+    const { data, error } = await supabase
+        .from("doctor_preferred_labs")
+        .update(patch)
+        .eq("id", id)
+        .select(LAB_COLUMNS)
+        .single();
+    if (error) throw new Error(`doctor_preferred_labs (update): ${error.message}`);
+    return labFromRow(data);
+}
+
+/**
+ * What a pasted Google Maps link points at, read from its redirect (the
+ * `maps-link-resolve` function; no Maps API). Null when it can't tell —
+ * the link itself still works for the patient's Navigate button.
+ */
+export async function resolveMapsLink(url: string): Promise<{ name: string | null; lat: number | null; lng: number | null } | null> {
+    try {
+        const { data, error } = await supabase.functions.invoke("maps-link-resolve", { body: { url } });
+        if (error || !data?.ok) return null;
+        return { name: data.name ?? null, lat: data.lat ?? null, lng: data.lng ?? null };
+    } catch {
+        return null;
+    }
+}
+
+/** "https://…" when it looks like a web link at all. */
+export function looksLikeLink(s: string): boolean {
+    return /^https?:\/\/\S+$/i.test(s.trim());
 }
 
 export async function removePreferredLab(id: number): Promise<void> {

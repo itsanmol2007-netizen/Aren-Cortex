@@ -511,15 +511,21 @@
 
 /* ── Chips — annotation level, not primary visual ────────────────────────────── */
 
-/* Symptom chips: small, tinted, clearly secondary */
+/* Symptom chips: tinted, secondary to the section label above them — but
+   this is the Visit Timeline's own primary reading surface (the one place
+   these chips render, see PatientRecord.tsx's VisitRow), not a table
+   annotation, so "secondary" means a step down from the section label,
+   never illegibly small. Sized up from 9px/1px-5px (2026-09-20, Anmol:
+   "how ugly they are looking... make it look beautiful... optimize it
+   around what a doctor wants to see"). */
 .prec-symptom-chip {
-    font-size: 9px;
+    font-size: 11.5px;
     font-weight: 600;
     background: #eff5ff;
     border: 1px solid rgba(18, 104, 232, 0.20);
     color: #1e60c8;
-    border-radius: 4px;
-    padding: 1px 5px;
+    border-radius: 6px;
+    padding: 4px 10px;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
@@ -531,15 +537,15 @@
     opacity: 0.50;
 }
 
-/* Finding chips: neutral, clearly tertiary */
+/* Finding chips: neutral, one step quieter than a symptom chip */
 .prec-finding-chip {
-    font-size: 9px;
+    font-size: 11.5px;
     font-weight: 500;
     background: #f1f5f9;
     border: 1px solid #cbd5e1;
     color: #475569;
-    border-radius: 4px;
-    padding: 1px 5px;
+    border-radius: 6px;
+    padding: 4px 10px;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
@@ -619,30 +625,55 @@
 }
 
 /* The compact tier — Clinical Snapshot and Progress Trend, which sit ABOVE
-   the timeline in the same column. 220px each would have made a sparse
-   patient's page three tall empty wells stacked on each other, which
-   empty-states.md forbids for exactly the right reason ("a 62px
-   illustration in a 300px well reads as an accident"). 150px is enough for
-   art + fact + next line and lands the three cards at comparable heights
-   instead of one 60px sliver next to a 220px block. */
+   the timeline in the same column. Originally 150px, tuned for a design
+   this page no longer has (three cards side by side needing comparable
+   heights) — each of these is now full main-column width on its own, and
+   at that width 150px read as a tiny lost island in a sea of white
+   (Anmol, 2026-09-20, circling this exact block: "the empty state of it
+   could be more better because everything looks small and crammed up").
+   190px still reads as a step down from Visit Timeline's own full 220px
+   (that one is the page's biggest "truly nothing here yet" moment), but
+   is no longer a different scale of empty state entirely. */
 .prec-timeline-empty.is-compact {
-    min-height: 150px;
-    padding: 18px 20px;
-    gap: 8px;
+    min-height: 190px;
+    padding: 26px 24px;
+    gap: 10px;
 }
+
+/* The SVG (`BlankSnapshotArt`/`BlankTrendArt`/`BlankTimelineArt`) used to sit
+   directly on the card's white body — a bare 50-60px line mark with nothing
+   grounding it read as thin rather than designed (Anmol, 2026-09-20: "so
+   much... terrible kind of SVG"). A soft, tone-matched medallion — the same
+   treatment Practice page's own empty cards now use — gives it somewhere to
+   sit, tinted to match the card's OWN header icon colour rather than a new
+   hue invented for this spot. */
+.prec-timeline-empty-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    margin-bottom: 2px;
+}
+
+.prec-timeline-empty-art.is-pink { background: #fdedf5; }
+.prec-timeline-empty-art.is-blue { background: #eaf1fd; }
+.prec-timeline-empty-art.is-violet { background: #f5f3ff; }
 
 .prec-timeline-empty-title {
     color: #334155;
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 700;
 }
 
 .prec-timeline-empty-sub {
-    max-width: 300px;
+    max-width: 320px;
     margin-top: -4px;
     color: #94a3b8;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
+    line-height: 1.5;
 }
 
 .prec-timeline-empty-cta {
@@ -1592,7 +1623,7 @@
 .prec-snapshot-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
 }
 
 .prec-snapshot-chip {

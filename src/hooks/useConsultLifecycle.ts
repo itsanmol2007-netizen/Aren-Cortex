@@ -36,6 +36,9 @@ import {
   type SaveConsultMedicine, type RealVisit,
 } from "../lib/db";
 import { saveExercisePlan } from "../lib/db/exercises";
+import { saveInterventionPlan } from "../lib/db/interventions";
+import { saveAssessmentPlan } from "../lib/db/assessments";
+import type { ReviewBillingResult } from "../lib/db/additionalCharges";
 import {
   recordVisitPayment,
   type ConfirmedPayment, type VisitType, type PaymentMethod,
@@ -351,7 +354,7 @@ export interface ConsultLifecycle {
    * "Confirm & Save" omits it, so the save no longer carries the side
    * effect by default.
    */
-  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => Promise<void>;
+  handleConfirmAndSave: (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage; billing?: ReviewBillingResult }) => Promise<void>;
   /** Review's close/back control. Advances ("Complete & Next") when the
    *  consult was already saved via the WhatsApp button; otherwise just
    *  closes Review back to the chart. */
@@ -866,7 +869,7 @@ export function useConsultLifecycle({
 
   // handleConfirmAndSave is defined below; this ref lets the WhatsApp button
   // call it without a declaration cycle.
-  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => Promise<void>) | null>(null);
+  const handleConfirmAndSaveRef = useRef<((opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage; billing?: ReviewBillingResult }) => Promise<void>) | null>(null);
 
   /** ReviewModal's "Send on WhatsApp" button. First press: save the consult
    *  and push the message, keeping Review open. Later presses (after a send
@@ -875,16 +878,16 @@ export function useConsultLifecycle({
    *  is set to right now — English unless the doctor changed it, and a
    *  retry re-sends in whichever language is currently selected, not
    *  whatever the first attempt used. */
-  const sendReviewOnWhatsApp = useCallback(async (language: RxLanguage) => {
+  const sendReviewOnWhatsApp = useCallback(async (language: RxLanguage, billing?: ReviewBillingResult) => {
     if (savedRxIdRef.current) {
       const pid = session.patient?.id;
       if (pid) await pushPrescriptionToWhatsApp(savedRxIdRef.current, pid, language);
       return;
     }
-    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true, language });
+    await handleConfirmAndSaveRef.current?.({ sendWhatsApp: true, stayOpen: true, language, billing });
   }, [session.patient, pushPrescriptionToWhatsApp]);
 
-  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage }) => {
+  const handleConfirmAndSave = useCallback(async (opts?: { sendWhatsApp?: boolean; stayOpen?: boolean; language?: RxLanguage; billing?: ReviewBillingResult }) => {
     const { visitId } = session;
     if (!visitId) { showToast("No active consult to save"); return; }
     // Already saved via the WhatsApp button and left open — a press on
@@ -895,6 +898,7 @@ export function useConsultLifecycle({
       const medicineRows: SaveConsultMedicine[] = plan.prescription.map((m, i) => ({
         medicine_id: m.medicine_id,
         composition_ids: m.composition_ids ?? [],
+        composition_note: m.compositionNote ?? null,
         dosage_mg: m.dosage_mg ?? null,
         frequency: freqLabelToSlot(m.frequency),
         duration_days: m.duration_days ?? null,
@@ -903,6 +907,8 @@ export function useConsultLifecycle({
         instructions: m.instructions ?? "",
         is_sos: m.is_sos ?? false,
         sort_order: i,
+        quantity_dispensed: m.quantityDispensed ?? null,
+        unit_price: m.unitPrice ?? null,
       }));
 
       const saveConsultOpts = {
@@ -913,11 +919,24 @@ export function useConsultLifecycle({
         tests: plan.selectedTests,
         vitals: chart.vitals,
         // The working diagnosis leads, then what was seen on examination.
-        findingsText: [...plan.diagnoses, ...chart.selectedFindings].join(", "),
+        findingsText: [...plan.diagnoses, ...chart.findingsForRecord].join(", "),
         followUpDays: plan.followUpDays,
         adviceNotes: plan.reviewAdvice,
         therapyNotes: plan.therapyNotes || null,
         labName: plan.selectedLabName,
+        // Absent (undefined) for the vast majority of clinics that have
+        // never turned medicine billing on — saveConsult skips its whole
+        // visit_payments fold in that case. See useConsultPlan's
+        // `medicineBillingPolicy`.
+        medicineBilling: plan.medicineBillingPolicy.enabled
+          ? { gstEnabled: plan.medicineBillingPolicy.gstEnabled, gstPercent: plan.medicineBillingPolicy.gstPercent }
+          : null,
+        // Whatever ReviewModal's own Billing section resolved to — additional
+        // charges, a discount on the final total — absent for the vast
+        // majority of consults that use neither. See ReviewModal's own
+        // `onSave`/`onSendWhatsApp` doc comment for why this rides the save
+        // callback instead of a prop threaded down from here.
+        reviewBilling: opts?.billing ?? null,
       };
 
       let saved: { prescriptionId: string } | null = null;
@@ -989,6 +1008,32 @@ export function useConsultLifecycle({
         } catch (e: any) {
           console.error("saveExercisePlan:", e);
           showToast(`Prescription saved, but the exercise programme did not: ${e?.message ?? e}`);
+        }
+      }
+
+      // Interventions, as rows rather than prose — same caught-not-thrown
+      // posture as the programme above, and the same reason: the visit is
+      // already committed by this line, and `therapy_notes` (written above,
+      // as part of `saved`) already carries the formatted text either way,
+      // so a doctor's printed Rx is correct even if this one write fails.
+      // What would be lost is only the structured site/side record.
+      // Same rule for the structure behind site-placed assessments: the
+      // composed lines are already in the saved diagnosis text.
+      const assessmentLines = plan.assessmentLines.filter((l) => plan.diagnoses.includes(l.text));
+      if (assessmentLines.length > 0) {
+        try {
+          await saveAssessmentPlan(saved.prescriptionId, assessmentLines);
+        } catch (e: any) {
+          console.error("saveAssessmentPlan:", e);
+          showToast(`Prescription saved, but the assessment sites did not: ${e?.message ?? e}`);
+        }
+      }
+      if (plan.interventionPlan.length > 0) {
+        try {
+          await saveInterventionPlan(saved.prescriptionId, plan.interventionPlan);
+        } catch (e: any) {
+          console.error("saveInterventionPlan:", e);
+          showToast(`Prescription saved, but the intervention record did not: ${e?.message ?? e}`);
         }
       }
 

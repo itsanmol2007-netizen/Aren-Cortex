@@ -173,6 +173,11 @@ function SkeletonAvatar({ size = 40 }: { size?: number }) {
    skeleton loading actually doesn't match pixel by pixel with what content
    is being shown here." Heights here are each row's real rendered height,
    not its font-size. */
+/* Same mechanism as `SkeletonTableRow` above — every text placeholder here
+   wears the real element's own class (`.prec-today-name`, `.prec-today-
+   chief`, ...) so its height/padding/border tracks whatever that class
+   actually is today, rather than a hand-typed number that can only ever
+   fall out of sync the next time the real card's typography changes. */
 function SkeletonTodayCard() {
     return (
         <div className="prec-today-card prec-today-card--skeleton">
@@ -183,27 +188,31 @@ function SkeletonTodayCard() {
             <div className="prec-today-card-top">
                 <SkeletonAvatar size={34} />
             </div>
-            <div className="prec-today-name">
-                <SkeletonBlock width="75%" height={15} />
-            </div>
-            <div className="prec-today-sub">
-                <SkeletonBlock width="45%" height={15} />
-            </div>
-            <div className="prec-today-chief" style={{ background: "rgba(18, 104, 232, 0.05)", border: "1px solid rgba(18, 104, 232, 0.12)" }}>
-                <SkeletonBlock width="80%" height={15} />
-            </div>
+            <div className="prec-today-name prec-skel-text prec-skel-text--block" style={{ width: "75%", borderRadius: 4 }}>&nbsp;</div>
+            <div className="prec-today-sub prec-skel-text prec-skel-text--block" style={{ width: "45%", borderRadius: 4 }}>&nbsp;</div>
+            <div className="prec-today-chief prec-skel-text">&nbsp;</div>
             <div className="prec-today-footer">
                 <div className="prec-today-time">
-                    <SkeletonBlock width={38} height={16} />
+                    <span className="prec-skel-text prec-skel-text--block" style={{ width: 38, height: 12, borderRadius: 3 }}>&nbsp;</span>
                 </div>
-                <SkeletonBlock width={62} height={19.5} style={{ borderRadius: 20 }} />
+                <span className="prec-today-status-chip is-waiting prec-skel-text prec-skel-text--block" style={{ width: 62 }}>&nbsp;</span>
             </div>
         </div>
     );
 }
 
-/* Same fix, same reason as `SkeletonTodayCard`'s own note — each height
-   below is the real cell's measured height, not its font-size. */
+/* Every placeholder below wears the SAME class the real element uses
+   (`.prec-table-patient-name`, `.prec-status-pill`, ...) plus `.prec-skel-
+   text` for the shimmer fill — so this row's height is whatever that real
+   class's own font-size/line-height/padding already produce, not a second,
+   hand-typed number a human has to keep in sync by re-measuring. That
+   re-measuring was done once already (2026-09-11) and had silently drifted
+   back out of alignment by 2026-09-19 the moment the real row's own
+   typography changed under it — Anmol: "the skeleton is correct but the
+   position of the skeleton is very terrible... this is unacceptable." A
+   class that's shared with the real row cannot drift out of sync with it;
+   a copied number always eventually will. See `.prec-skel-text`'s own
+   comment in patients.css for the full mechanism. */
 function SkeletonTableRow() {
     return (
         <tr className="prec-table-row prec-table-row--skeleton">
@@ -213,38 +222,32 @@ function SkeletonTableRow() {
                         <SkeletonAvatar size={32} />
                     </div>
                     <div className="prec-table-patient-info">
-                        <span className="prec-table-patient-name">
-                            <SkeletonBlock width={110} height={19.5} />
-                        </span>
-                        <span className="prec-table-patient-meta">
-                            <SkeletonBlock width={80} height={16.5} style={{ marginTop: 2 }} />
-                        </span>
+                        <span className="prec-table-patient-name prec-skel-text prec-skel-text--block" style={{ width: 110, borderRadius: 4 }}>&nbsp;</span>
+                        <span className="prec-table-patient-meta prec-skel-text prec-skel-text--block" style={{ width: 80, borderRadius: 4 }}>&nbsp;</span>
                     </div>
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--snapshot">
                 <div className="prec-snapshot-cell">
                     <div className="prec-snapshot-chips">
-                        <SkeletonBlock width={60} height={19} style={{ borderRadius: 4 }} />
-                        <SkeletonBlock width={50} height={19} style={{ borderRadius: 4 }} />
+                        <span className="prec-snapshot-chip prec-skel-text prec-skel-text--block" style={{ width: 60 }}>&nbsp;</span>
+                        <span className="prec-snapshot-chip prec-skel-text prec-skel-text--block" style={{ width: 50 }}>&nbsp;</span>
                     </div>
-                    <SkeletonBlock width={130} height={16.5} style={{ marginTop: 3 }} />
+                    <div className="prec-snapshot-detail prec-skel-text prec-skel-text--block" style={{ width: 130, borderRadius: 4 }}>&nbsp;</div>
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--visit">
-                <SkeletonBlock width={50} height={17} />
-                <SkeletonBlock width={40} height={16.5} style={{ marginTop: 3 }} />
+                <span className="prec-table-visit-label prec-skel-text" style={{ width: 50, borderRadius: 4 }}>&nbsp;</span>
+                <span className="prec-table-visit-sub prec-skel-text" style={{ width: 40, borderRadius: 4 }}>&nbsp;</span>
             </td>
             <td className="prec-table-cell prec-table-cell--count">
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <SkeletonBlock width={14} height={16} />
-                    <SkeletonBlock width={28} height={13.5} style={{ marginTop: 2 }} />
-                </div>
+                <span className="prec-table-count prec-skel-text prec-skel-text--block" style={{ width: 14, borderRadius: 4 }}>&nbsp;</span>
+                <span className="prec-table-count-label prec-skel-text" style={{ width: 28, borderRadius: 4 }}>&nbsp;</span>
             </td>
             <td className="prec-table-cell prec-table-cell--status">
                 <div className="prec-table-status-wrap">
-                    <SkeletonBlock width={62} height={23} style={{ borderRadius: 20 }} />
-                    <SkeletonBlock width={42} height={15} style={{ marginTop: 2 }} />
+                    <span className="prec-status-pill prec-skel-text" style={{ width: 62 }}>&nbsp;</span>
+                    <span className="prec-table-time-ago prec-skel-text prec-skel-text--block" style={{ width: 42, borderRadius: 4 }}>&nbsp;</span>
                 </div>
             </td>
             <td className="prec-table-cell prec-table-cell--arrow">

@@ -21,9 +21,10 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
     Sunrise, Sun, Sunset, Moon, Utensils, UtensilsCrossed,
-    Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert,
+    Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert, IndianRupee,
+    FlaskConical, Bandage, Dumbbell, MapPin, Navigation,
 } from "lucide-react";
-import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine } from "./api";
+import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine, type PublicRxBilling } from "./api";
 import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
 // The same clinic-agnostic marks the printed prescription and the doctor's
 // on-screen review already carry (`ReviewModal`/`PrescriptionDocument`) —
@@ -33,6 +34,7 @@ import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage 
 // and some SVG and all for all kind of users" — for every language, not
 // only the English typography pass done separately.
 import { RxMonogram, RxWatermark } from "../../components/RxMarks";
+import { dashText } from "../../lib/clinicalText";
 
 type SlotKey = "M" | "A" | "E" | "N";
 
@@ -145,7 +147,144 @@ const SECTION_TONE = {
     indigo: "bg-indigo-100 text-indigo-700",
     purple: "bg-purple-100 text-purple-700",
     amber: "bg-amber-100 text-amber-700",
+    emerald: "bg-emerald-100 text-emerald-700",
+    teal: "bg-teal-100 text-teal-700",
+    violet: "bg-violet-100 text-violet-700",
 } as const;
+
+/** The investigations card and the way to the lab, in plain words. */
+const LAB_LABELS: Record<RxLanguage, { showAtLab: string; getDoneAt: string; navigate: string; openMap: string }> = {
+    en: {
+        showAtLab: "Show this at the lab",
+        getDoneAt: "Get these tests done at",
+        navigate: "Navigate to the lab",
+        openMap: "Opens Google Maps with the way there",
+    },
+    hi: {
+        showAtLab: "यह लैब में दिखाएँ",
+        getDoneAt: "ये जाँचें यहाँ करवाएँ",
+        navigate: "लैब का रास्ता देखें",
+        openMap: "Google Maps में रास्ता खुलेगा",
+    },
+    "hi-Latn": {
+        showAtLab: "Yeh lab mein dikhayein",
+        getDoneAt: "Ye jaanch yahan karwayein",
+        navigate: "Lab ka rasta dekhein",
+        openMap: "Google Maps mein rasta khulega",
+    },
+};
+
+/** Where the Navigate button goes: the doctor's own map link, else directions
+ *  to the lab's name and address. No Maps API either way. */
+function labMapHref(lab: { name: string; address: string | null; mapsUrl: string | null }): string | null {
+    if (lab.mapsUrl && /^https?:\/\//i.test(lab.mapsUrl)) return lab.mapsUrl;
+    if (lab.address) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${lab.name}, ${lab.address}`)}`;
+    return null;
+}
+
+const BILLING_LABELS: Record<RxLanguage, {
+    title: string; fee: string; medicine: string; discount: string; total: string;
+}> = {
+    en: { title: "Billing", fee: "Consultation Fee", medicine: "Medicine Charges", discount: "Discount", total: "Total" },
+    hi: { title: "बिल", fee: "परामर्श शुल्क", medicine: "दवाई का शुल्क", discount: "छूट", total: "कुल" },
+    "hi-Latn": { title: "Bill", fee: "Consultation Fee", medicine: "Dawai ka Charge", discount: "Discount", total: "Total" },
+};
+
+/** One billing line — label left, amount right, same shape the printed
+ *  document's own `BillingRow` uses, redrawn in this page's bolder,
+ *  higher-contrast idiom instead of imported wholesale. */
+function BillingLine({ label, amount, muted, negative }: { label: string; amount: number; muted?: boolean; negative?: boolean }) {
+    return (
+        <div className="flex items-center justify-between gap-3 py-1">
+            <span className={`text-sm font-semibold ${muted ? "text-slate-400" : "text-slate-700"}`}>{label}</span>
+            <span className={`text-sm font-bold ${negative ? "text-rose-600" : "text-slate-900"}`}>
+                {negative ? "−" : ""}₹{Math.abs(amount).toFixed(2)}
+            </span>
+        </div>
+    );
+}
+
+/** One medicine's own price line — name and line total on top, the
+ *  quantity × rate it was computed from underneath, same "show the working,
+ *  not just the number" ask that drove `ClinicalLine` (Anmol, 2026-09-20:
+ *  "detailed breakdown of medicine pricing per medicine... right now just
+ *  showing that medicine pricing and consumer pricing no everything"). Its
+ *  own row shape rather than `BillingLine` — a bare label/amount pair has
+ *  nowhere to put the qty × rate working without cramming both onto one
+ *  line and risking a long medicine name colliding with the amount. */
+function MedicineBillingLine({ name, qty, unitPrice }: { name: string; qty: number; unitPrice: number }) {
+    return (
+        <div className="py-1.5">
+            <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-700">{name}</span>
+                <span className="shrink-0 text-sm font-bold text-slate-900">₹{(qty * unitPrice).toFixed(2)}</span>
+            </div>
+            <p className="text-xs font-medium text-slate-400">{qty} × ₹{unitPrice.toFixed(2)}</p>
+        </div>
+    );
+}
+
+function BillingCard({ billing, medicines, language }: { billing: PublicRxBilling; medicines: PublicRxMedicine[]; language: RxLanguage }) {
+    const t = BILLING_LABELS[language];
+    // Only medicines this billing pass actually priced — most clinics never
+    // turn dispensing billing on, in which case every medicine here has
+    // `unitPrice: null` and the card falls back to `billing.medicineTotal`
+    // as one lump line, same as before this itemization existed.
+    const pricedMedicines = medicines.filter(
+        (m): m is PublicRxMedicine & { quantityDispensed: number; unitPrice: number } =>
+            m.quantityDispensed != null && m.unitPrice != null
+    );
+    return (
+        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4">
+            <div className="divide-y divide-slate-100">
+                {billing.consultationFee != null && <BillingLine label={t.fee} amount={billing.consultationFee} />}
+                {billing.feeGstAmount > 0 && <BillingLine label="GST" amount={billing.feeGstAmount} muted />}
+                {pricedMedicines.length > 0 ? (
+                    pricedMedicines.map((m, i) => (
+                        <MedicineBillingLine key={`${m.name}-${i}`} name={m.name} qty={m.quantityDispensed} unitPrice={m.unitPrice} />
+                    ))
+                ) : (
+                    billing.medicineTotal > 0 && <BillingLine label={t.medicine} amount={billing.medicineTotal} />
+                )}
+                {billing.medicineGstAmount > 0 && <BillingLine label="GST" amount={billing.medicineGstAmount} muted />}
+                {billing.additionalCharges.map((c, i) => (
+                    <BillingLine key={`${c.label}-${i}`} label={c.label} amount={c.amount} />
+                ))}
+                {billing.discountAmount > 0 && (
+                    <BillingLine
+                        label={`${t.discount}${billing.discountPercent != null ? ` (${billing.discountPercent}%)` : ""}`}
+                        amount={billing.discountAmount} negative
+                    />
+                )}
+            </div>
+            <div className="mt-2 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2.5">
+                <span className="text-xs font-black uppercase tracking-wide text-emerald-800">{t.total}</span>
+                <span className="text-lg font-black text-emerald-800">₹{billing.total.toFixed(2)}</span>
+            </div>
+        </div>
+    );
+}
+
+/** One labelled line inside the Clinical Notes card — Complaints
+ *  (symptoms), Findings (what examination turned up) and Assessment (the
+ *  confirmed diagnosis) used to be joined into one undifferentiated
+ *  sentence with " · " (Anmol, 2026-09-20: "distinguish between Symptoms
+ *  and what doctor examined... and obviously Assessment"). A small
+ *  uppercase micro-label ahead of each, same idiom `BillingLine` already
+ *  uses for its own label/value pairs just above — never a full second
+ *  `Section` per group, which would mean three illustrated empty states in
+ *  a row for a visit that only has one of the three ("avoiding adding
+ *  unnecessary empty state" — each line already only renders when it has
+ *  something to say). `alert` matches the printed document's own red
+ *  treatment for findings (`PrescriptionDocument.tsx`'s `⚠` rows). */
+function ClinicalLine({ label, text, alert }: { label: string; text: string; alert?: boolean }) {
+    return (
+        <p className="text-sm leading-relaxed">
+            <span className="mr-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400">{label}:</span>
+            <span className={`font-medium ${alert ? "text-rose-700" : "text-slate-700"}`}>{text}</span>
+        </p>
+    );
+}
 
 /** A soft rounded chip behind each section's icon, rather than the icon
  *  floating bare — same "give the icon its own surface" idiom used for the
@@ -272,8 +411,37 @@ export function PublicPrescriptionPage() {
     if (state.phase === "loading") return <Skeleton />;
     if (state.phase === "error") return <ErrorScreen />;
 
-    const { rx } = state;
+    // Lines saved before 2026-09-25 carry an em dash ("Fracture — Right
+    // knee"); the page speaks the consult's current form, " - ".
+    const rx = {
+        ...state.rx,
+        assessments: state.rx.assessments?.map(dashText),
+        procedures: state.rx.procedures?.map((p) => ({ ...p, text: dashText(p.text) })),
+        results: state.rx.results?.map((r) => ({ name: dashText(r.name), text: dashText(r.text) })),
+    };
     const labels = rxLabels(language);
+
+    // `rx.diagnosisText` is `findings_text` on the `prescriptions` row — a
+    // legacy column written as `[...plan.diagnoses, ...chart.selectedFindings]
+    // .join(", ")` (see useConsultLifecycle.ts's `findingsText`), so it's
+    // ALREADY a blend of the confirmed diagnosis and the very same findings
+    // `rx.findings` lists separately and cleanly. Showing it verbatim next to
+    // `rx.findings` would print most findings twice, under two different
+    // labels — worse than the run-on sentence this replaces. Stripping out
+    // any comma-separated part that exact-matches (case-insensitive) a
+    // symptom or finding already shown elsewhere leaves just the doctor's
+    // own diagnosis words for the Assessment line — an honest reading of a
+    // combined field, not a perfect one (a diagnosis whose name happens to
+    // equal a finding's name would drop here too), but it beats duplicating
+    // the same text under a second heading.
+    const namedElsewhere = new Set(
+        [...rx.symptoms, ...rx.findings].map((s) => s.toLowerCase().trim())
+    );
+    const assessmentText = (rx.diagnosisText ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s && !namedElsewhere.has(s.toLowerCase()))
+        .join(", ");
     const dateStr = new Date(rx.date).toLocaleDateString(
         language === "en" ? "en-IN" : "hi-IN",
         { day: "2-digit", month: "short", year: "numeric" }
@@ -363,11 +531,42 @@ export function PublicPrescriptionPage() {
                     </div>
                 </div>
 
-                {(rx.symptoms.length || rx.findings.length || rx.diagnosisText) ? (
+                {(rx.symptoms.length || rx.findings.length || assessmentText) ? (
                     <Section icon={Stethoscope} title={labels.findings} bold={boldWeight} tone="slate">
-                        <div className="rounded-2xl border-2 border-slate-200 bg-white p-4 text-sm font-medium text-slate-700">
-                            {[rx.diagnosisText, ...rx.symptoms, ...rx.findings].filter(Boolean).join(" · ")}
+                        <div className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.symptoms.length > 0 && (
+                                <ClinicalLine label={labels.complaints} text={rx.symptoms.join(", ")} />
+                            )}
+                            {rx.findings.length > 0 && (
+                                <ClinicalLine label={labels.findings} text={rx.findings.join(", ")} alert />
+                            )}
+                            {/* Structured assessments (with place and details)
+                                when the visit has them; the older blended
+                                text otherwise. Set apart as the conclusion. */}
+                            {rx.assessments?.length ? (
+                                <div className="mt-2 rounded-xl border-l-4 border-violet-500 bg-violet-50 px-3 py-2">
+                                    <p className="mb-0.5 text-[10px] font-black uppercase tracking-wide text-violet-500">{labels.assessment}</p>
+                                    {rx.assessments.map((a, i) => (
+                                        <p key={i} className={`text-sm ${boldWeight} leading-snug text-violet-950`}>{a}</p>
+                                    ))}
+                                </div>
+                            ) : assessmentText ? (
+                                <ClinicalLine label={labels.assessment} text={assessmentText} />
+                            ) : null}
                         </div>
+                    </Section>
+                ) : null}
+
+                {rx.results?.length ? (
+                    <Section icon={FlaskConical} title={labels.results} bold={boldWeight} tone="teal">
+                        <ul className="space-y-2 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.results.map((r, i) => (
+                                <li key={i} className="text-sm leading-relaxed">
+                                    <span className={`block ${boldWeight} text-slate-900`}>{r.name}</span>
+                                    <span className="font-medium text-slate-700">{r.text}</span>
+                                </li>
+                            ))}
+                        </ul>
                     </Section>
                 ) : null}
 
@@ -396,11 +595,86 @@ export function PublicPrescriptionPage() {
 
                 {rx.tests.length ? (
                     <Section icon={ClipboardList} title={labels.investigations} bold={boldWeight} tone="purple">
-                        <ul className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
-                            {rx.tests.map((t, i) => (
-                                <li key={i} className="text-sm font-semibold text-slate-800">• {t}</li>
+                        {/* Highlighted: this is the card a patient shows at the
+                            lab's counter, and the way to get there. */}
+                        <div className="overflow-hidden rounded-2xl border-2 border-purple-300 bg-gradient-to-b from-purple-50 to-white shadow-[0_6px_20px_-10px_rgba(126,34,206,0.45)]">
+                            <p className="flex items-center gap-1.5 border-b border-purple-200 bg-purple-100/70 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-purple-800">
+                                <FlaskConical className="h-3.5 w-3.5" strokeWidth={2.5} /> {LAB_LABELS[language].showAtLab}
+                            </p>
+                            <ul className="space-y-2 px-4 py-3.5">
+                                {rx.tests.map((t, i) => (
+                                    <li key={i} className={`flex gap-2.5 text-[15px] ${boldWeight} leading-snug text-slate-900`}>
+                                        <span className="mt-[3px] grid h-5 w-5 shrink-0 place-items-center rounded-full bg-purple-600 text-[11px] font-black text-white">{i + 1}</span>
+                                        {dashText(t)}
+                                    </li>
+                                ))}
+                            </ul>
+                            {rx.lab && (() => {
+                                const href = labMapHref(rx.lab);
+                                return (
+                                    <div className="border-t border-purple-200 bg-white px-4 py-3.5">
+                                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{LAB_LABELS[language].getDoneAt}</p>
+                                        <p className={`mt-0.5 text-base ${boldWeight} text-slate-900`}>{rx.lab.name}</p>
+                                        {rx.lab.address && (
+                                            <p className="mt-0.5 flex items-start gap-1.5 text-sm font-medium text-slate-600">
+                                                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-purple-600" /> {rx.lab.address}
+                                            </p>
+                                        )}
+                                        {href && (
+                                            <a
+                                                href={href}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-[15px] ${boldWeight} text-white shadow-sm active:scale-[0.99]`}
+                                            >
+                                                <Navigation className="h-4 w-4" strokeWidth={2.5} /> {LAB_LABELS[language].navigate}
+                                            </a>
+                                        )}
+                                        {href && <p className="mt-1.5 text-center text-[11px] font-semibold text-slate-400">{LAB_LABELS[language].openMap}</p>}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </Section>
+                ) : null}
+
+                {rx.procedures?.length ? (
+                    <Section icon={Bandage} title={labels.therapyPerformed} bold={boldWeight} tone="teal">
+                        <div className="space-y-3 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.procedures.some((p) => p.status === "performed") && (
+                                <div>
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">{labels.doneToday}</p>
+                                    {rx.procedures.filter((p) => p.status === "performed").map((p, i) => (
+                                        <p key={i} className="text-sm font-semibold text-slate-800">• {p.text}</p>
+                                    ))}
+                                </div>
+                            )}
+                            {rx.procedures.some((p) => p.status === "planned") && (
+                                <div>
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">{labels.plannedNext}</p>
+                                    {rx.procedures.filter((p) => p.status === "planned").map((p, i) => (
+                                        <p key={i} className="flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-slate-800">
+                                            <span>• {p.text}</span>
+                                            {p.due && (
+                                                <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
+                                                    {labels.dueOn(new Date(`${p.due}T00:00:00`).toLocaleDateString(language === "en" ? "en-IN" : "hi-IN", { day: "numeric", month: "short" }))}
+                                                </span>
+                                            )}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </Section>
+                ) : null}
+
+                {rx.exercises?.length ? (
+                    <Section icon={Dumbbell} title={labels.homeExercise} bold={boldWeight} tone="emerald">
+                        <ol className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.exercises.map((e, i) => (
+                                <li key={i} className="text-sm font-semibold text-slate-800">{i + 1}. {e}</li>
                             ))}
-                        </ul>
+                        </ol>
                     </Section>
                 ) : null}
 
@@ -438,6 +712,19 @@ export function PublicPrescriptionPage() {
                             <p className="mt-1 border-t-2 border-slate-900 pt-1 text-xs font-bold text-slate-700">{doctorName}</p>
                         </div>
                     </div>
+                ) : null}
+
+                {/* Billing — appended at the bottom, same relative position
+                    as the printed document's own Billing card (after
+                    signature, before the clinic's closing note). A single-
+                    column mobile page has no "beside the prescription"
+                    option the way the doctor's on-screen review does, so
+                    this follows the printed/thermal placement instead
+                    (Anmol, 2026-09-20: "no receipt into... WhatsApp"). */}
+                {rx.billing ? (
+                    <Section icon={IndianRupee} title={BILLING_LABELS[language].title} bold={boldWeight} tone="emerald">
+                        <BillingCard billing={rx.billing} medicines={rx.medicines} language={language} />
+                    </Section>
                 ) : null}
 
                 {rx.footerNote ? (

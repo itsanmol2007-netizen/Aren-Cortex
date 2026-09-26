@@ -198,6 +198,9 @@ export const en = {
     attachStagedNone: "No files added yet",
     attachTypeLabel: "Type",
     attachPreview: "Preview",
+    attachCloseFullscreen: "Close fullscreen",
+    attachZoomIn: "Zoom in",
+    attachZoomOut: "Zoom out",
 
     syncSaving: "Saving…",
     syncOffline: "Offline — will sync",
@@ -720,6 +723,9 @@ export const hinglish: Record<StringKey, string> = {
     attachStagedNone: "Abhi koi file add nahi ki",
     attachTypeLabel: "Type",
     attachPreview: "Preview",
+    attachCloseFullscreen: "Fullscreen band karo",
+    attachZoomIn: "Zoom in karo",
+    attachZoomOut: "Zoom out karo",
 
     syncSaving: "Save ho raha…",
     syncOffline: "Offline — sync hoga jaise hi net aayega",

@@ -24,10 +24,10 @@
 // "High relevance" no matter how weakly the engine scored it.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-    Activity, ArrowUpRight, Check, ChevronDown, FlaskConical, Lightbulb, Pill,
+    ArrowUpRight, Check, ChevronDown, Dumbbell, FlaskConical, Lightbulb, Pill,
     ShieldAlert, Sparkles, Waves, ActivitySquare, X } from "lucide-react";
 import type { ActiveSignal, IntentType, Ruleset } from "../../lib/synapse/engine";
 import type { PersonalizedIntent } from "../../lib/synapse/personalize";
@@ -43,6 +43,7 @@ import type { AcceptPayload } from "./types";
 import { BlankTestArt } from "./BlankArt";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
+import { isHeadOf } from "../../lib/clinicalText";
 
 /** The free-text fallback (§4) only covers these three of this card's types
  *  — `finding` lives in ConditionsCard, `medicine` has its own composition-
@@ -66,11 +67,11 @@ const isFreeTextType = (t: IntentType | null): t is DoctorFreeTermType =>
  *    ConditionsCard's numbered rows, which is what makes THOSE two panels'
  *    capped/expanded boxes land on the same pixel (Anmol, 2026-08-25: "the
  *    final height of both panels are different").
- *  - Kind label showing: 79px, measured live before the label was removed
- *    from the single-type case — the real height of a three-line `.cs-sug`
- *    row, not a fresh guess.
+ *  - Kind label showing: 60px, measured live (2026-09-24) after the kind
+ *    moved onto the relevance line — a two-line `.cs-sug` row, so about
+ *    six fit where three did.
  */
-const MULTI_TYPE_ROW_H = 79;
+const MULTI_TYPE_ROW_H = 60;
 
 /**
  * Section order, labels, glyphs and the verb each type is accepted with.
@@ -104,11 +105,17 @@ const CATALOGUE: Section[] = [
     { type: "test", label: "Investigation", verb: "Order", icon: <FlaskConical size={14} /> },
     { type: "referral", label: "Referral", verb: "Refer", icon: <ArrowUpRight size={14} /> },
     { type: "advice", label: "Advice", verb: "Advise", icon: <Lightbulb size={14} /> },
-    { type: "exercise", label: "Exercise", verb: "Add", icon: <Activity size={14} /> },
+    // Its own glyph (a dumbbell, not the pulse line an impairment's square
+    // resembles) so an exercise reads as a programme at a glance.
+    { type: "exercise", label: "Exercise", verb: "Add", icon: <Dumbbell size={14} /> },
     // Delivered in the clinic, during this session — see IntentType in
     // engine.ts for why this is not filed under Exercise. "Perform" rather
-    // than "Add" because that is what the physiotherapist is agreeing to do.
-    { type: "modality", label: "Therapy", verb: "Perform", icon: <Waves size={14} /> },
+    // than "Add" because that is what the doctor is agreeing to do.
+    // "Interventions", not "Modality" or "Therapy" — Anmol, 2026-09-23: one
+    // shared clinical word across every specialty this renders for (cast
+    // application, closed reduction, IFT, manual therapy are all
+    // "interventions" underneath, whichever specialty is asking).
+    { type: "modality", label: "Interventions", verb: "Perform", icon: <Waves size={14} /> },
     // Phase 4. "Note" rather than "Add" because an impairment is something
     // the physiotherapist RECOGNISES about the patient, not something they
     // hand over — the verb is the difference between a finding and a
@@ -131,6 +138,12 @@ interface Props {
      * everything except medicines, which is the historical behaviour.
      */
     types?: IntentType[];
+    /**
+     * The tab this card opens on once that type has something ranked —
+     * Orthopedics opens Clinical Actions on Interventions, its core output.
+     * Only until the doctor picks a tab themselves.
+     */
+    initialScope?: IntentType | null;
     /** the heading — "Medicines", "Exercise Plans", "Clinical Suggestions"… */
     title?: string;
     byType: Record<IntentType, PersonalizedIntent[]>;
@@ -211,9 +224,8 @@ export function SuggestionsCard({
     selectedTests = [], adviceLines = [],
     onExplain, ruleset, activeSignals, expanded, onToggleExpanded, hasChart,
     disabled = false, className = "",
-    types, title = "Clinical Suggestions", capped,
+    types, title = "Clinical Actions", capped, initialScope = null,
 }: Props) {
-    const [showAllCapped, setShowAllCapped] = useState(false);
     const reduce = useReducedMotion();
 
     /**
@@ -274,7 +286,15 @@ export function SuggestionsCard({
      * request: "add buttons like tabs for Tests and Advices... to quickly
      * get to it."
      */
-    const [scope, setScope] = useState<IntentType | null>(null);
+    const [scope, setScopeState] = useState<IntentType | null>(null);
+    const scopeTouched = useRef(false);
+    const setScope = (t: IntentType | null) => { scopeTouched.current = true; setScopeState(t); };
+    // Open on the specialty's own tab the first time it has anything in it;
+    // an empty tab on a chart nobody has filled yet would read as broken.
+    const initialHasRows = !!initialScope && (byType[initialScope]?.length ?? 0) > 0;
+    useEffect(() => {
+        if (initialHasRows && !scopeTouched.current) setScopeState(initialScope);
+    }, [initialHasRows, initialScope]);
     const search = useIntentSearch(scope ? [scope] : SEARCH_TYPES);
 
     /**
@@ -291,7 +311,11 @@ export function SuggestionsCard({
             if (testSection) {
                 const rankedLabels = new Set((byType.test ?? []).map((i) => i.label.trim().toLowerCase()));
                 for (const t of selectedTests) {
-                    if (!rankedLabels.has(t.trim().toLowerCase())) {
+                    const x = t.trim().toLowerCase();
+                    // "X-Ray Knee — Left, AP + Lateral" is the ranked "X-Ray
+                    // Knee" at a site; its tick is on that row already.
+                    const sitedRanked = [...rankedLabels].some((r) => isHeadOf(x, r));
+                    if (!rankedLabels.has(x) && !sitedRanked) {
                         list.push({ type: "test", label: t, icon: testSection.icon, verb: testSection.verb });
                     }
                 }
@@ -465,14 +489,11 @@ export function SuggestionsCard({
     // the caller passed `capped` — every instance does today. Lifted out of
     // `body()` (single source of truth) so the subheader's count and the
     // `motion.div` height below can both read it without recomputing.
-    const visibleRows = useMemo(
-        () => (
-            capped != null && !showAllCapped
-                ? rows.filter((r, i) => i < capped || isIntentTaken(r.intent))
-                : rows
-        ),
-        [rows, capped, showAllCapped, selectedTests, adviceLines, acceptedIntentIds]
-    );
+    // 2026-09-26 (Anmol): no "Show all" any more. The card sits at the very
+    // bottom of the page, where a toggle that grows it is the worst place to
+    // grow; like the medicine list, every row is there and the box scrolls
+    // on its own, with half a row showing past the edge to say so.
+    const visibleRows = rows;
 
     // Keyed on the rendered rows, so "Show all" cascades the newly revealed
     // ones in rather than having them appear mid-list unannounced.
@@ -670,8 +691,12 @@ export function SuggestionsCard({
         return [...unrankedNodes, freeTermsStrip, ...rowNodes];
     };
 
+    // The category tabs, one line; the "N of M" count rides the same row so
+    // the list starts a row higher.
+    const showsFilterRow = SECTIONS.length > 1 && !search.isSearching && anyContent && nonEmptySections.length > 1;
+
     return (
-        <section className={`cs-card ${className}`} aria-label="Clinical suggestions">
+        <section className={`cs-card ${className}`} aria-label="Clinical actions">
             {/* The title takes a glyph tile so this panel and MEDICINE
                 RECOMMENDATIONS beside it read as the two halves of one row.
                 Before this it was a violet underlined tab — the language of a
@@ -752,7 +777,7 @@ export function SuggestionsCard({
                 category, which is the only thing this row still holds, so a
                 panel with nothing to filter spends no vertical space on an
                 empty controls strip. */}
-            {SECTIONS.length > 1 && !search.isSearching && anyContent && nonEmptySections.length > 1 && (
+            {showsFilterRow && (
                 <div className="cs-sug-controls">
                     {/* §3, 2026-08-24. One button per category — "Tests",
                         "Advice"… — to get straight to that section,
@@ -771,7 +796,7 @@ export function SuggestionsCard({
                         the identical filter, so a two-tab row that always
                         says the same thing twice was reading as a stray
                         global search bar rather than a scoped one. */}
-                    <div className="cs-sug-filter" role="tablist" aria-label="Filter by category">
+                    <div className="cs-sug-filter is-oneline" role="tablist" aria-label="Filter by category">
                             <button
                                 type="button"
                                 role="tab"
@@ -790,13 +815,18 @@ export function SuggestionsCard({
                                     className={`cs-sug-filter-btn${scope === s.type ? " is-on" : ""}`}
                                     // A second click on the active tab clears it — the
                                     // fastest way back to "All" without a second control.
-                                    onClick={() => setScope((cur) => (cur === s.type ? null : s.type))}
+                                    onClick={() => setScope(scope === s.type ? null : s.type)}
                                 >
                                     {s.icon}
                                     {s.label}
                                 </button>
                             ))}
                     </div>
+                    {capped != null && rows.length > 0 && (
+                        <span className="cs-ranked-count" title="Ranked — what confirms or rules out what you've ranked above.">
+                            {rows.length}
+                        </span>
+                    )}
                 </div>
             )}
 
@@ -833,7 +863,7 @@ export function SuggestionsCard({
                         matching it, which is exactly what was pushing their
                         "Show more"/"Show less" controls out of alignment
                         (item 4 of the same message). */}
-                    {capped != null && rows.length > 0 && (
+                    {capped != null && rows.length > 0 && !showsFilterRow && (
                         <div className="cs-ranked-head">
                             <span
                                 className="cs-ranked-label"
@@ -842,7 +872,7 @@ export function SuggestionsCard({
                                 Ranked suggestions
                             </span>
                             <span className="cs-ranked-count">
-                                {visibleRows.length} of {rows.length}
+                                {rows.length}
                             </span>
                         </div>
                     )}
@@ -850,14 +880,14 @@ export function SuggestionsCard({
                         initial={false}
                         animate={
                             capped != null
-                                ? { maxHeight: showAllCapped ? 4.5 * ROW_H : capped * ROW_H }
+                                ? { maxHeight: rows.length > capped ? (capped + 0.5) * ROW_H : capped * ROW_H }
                                 : { maxHeight: "none" }
                         }
                         transition={
                             reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }
                         }
                         className={
-                            "cs-list " + (capped != null && showAllCapped ? "is-list-expanded" : "is-list-collapsed")
+                            "cs-list " + (capped != null && rows.length > capped ? "is-list-expanded" : "is-list-collapsed")
                         }
                         ref={listRef}
                         layoutScroll
@@ -865,16 +895,7 @@ export function SuggestionsCard({
                     >
                         {body()}
                     </motion.div>
-                    {capped != null && rows.length > capped && (
-                        <button
-                            type="button"
-                            onClick={() => setShowAllCapped((v) => !v)}
-                            className="cs-card-foot-more cs-sug-cap-toggle"
-                        >
-                            {showAllCapped ? "Show less" : `Show all ${rows.length}`}
-                            <ChevronDown size={13} className={showAllCapped ? "is-flipped" : undefined} />
-                        </button>
-                    )}
+
                 </>
             )}
         </section>
@@ -923,7 +944,6 @@ function SuggestionRow({
             <span className={`cs-sug-icon is-${tone}`} aria-hidden="true">{icon}</span>
 
             <div className="cs-sug-main">
-                {kindLabel && <span className={`cs-sug-kind is-${tone}`}>{kindLabel}</span>}
                 <div className="cs-sug-name">
                     <span>{intent.label}</span>
                     {intent.isSafetyCritical && (
@@ -933,7 +953,16 @@ function SuggestionRow({
                     {isHard && <span className="cs-flag is-hard">Check</span>}
                     <WhyButton label={intent.label} onOpen={onExplain} />
                 </div>
-                {relevance && <span className="cs-sug-rel">{relevance}</span>}
+                {/* Two lines, not three: the kind rides the relevance line
+                    ("INTERVENTIONS · High relevance"), and the coloured icon
+                    carries it at a glance — so ~six rows fit where three did. */}
+                {(kindLabel || relevance) && (
+                    <span className="cs-sug-rel">
+                        {kindLabel && <b className={`cs-sug-kind is-inline is-${tone}`}>{kindLabel}</b>}
+                        {kindLabel && relevance && " · "}
+                        {relevance}
+                    </span>
+                )}
             </div>
 
             {added ? (

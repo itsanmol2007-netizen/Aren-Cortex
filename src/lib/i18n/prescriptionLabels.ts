@@ -60,6 +60,11 @@ export interface RxLabels {
     measurements: string;
     complaints: string;
     findings: string;
+    /** The doctor's own confirmed diagnosis — kept apart from `findings`
+     *  (what examination turned up) so a patient reading the WhatsApp/print
+     *  page can tell "what was found" from "what it was judged to be",
+     *  rather than one run-on sentence blending the two. */
+    assessment: string;
     /** The ℞ section heading — print keeps the symbol, this is the word after it. */
     prescription: string;
     colMedicine: string;
@@ -76,6 +81,24 @@ export interface RxLabels {
     advice: string;
     therapyPerformed: string;
     homeExercise: string;
+    /** results of investigations that came back and were read at this visit */
+    results: string;
+    /** procedures done in the clinic today (cast applied, sutures removed) */
+    doneToday: string;
+    /** procedures planned for a later date */
+    plannedNext: string;
+    /** what continues from earlier visits: a cast still on, a fracture healing */
+    continuingCare: string;
+    /** "3 Oct" -> "due 3 Oct" / the localised equivalent */
+    dueOn: (date: string) => string;
+    /** The printed billing section's own heading — see PrescriptionDocument's
+     *  Billing block. Separate from `measurements`'s "reading" sense even
+     *  though both are short catch-all nouns; this one is money. */
+    billing: string;
+    consultationFee: string;
+    medicineCharge: string;
+    discount: string;
+    total: string;
     qrCaption: string;
     /** n -> "Follow-up in 5 days" / the localised equivalent. */
     followUp: (days: number) => string;
@@ -133,6 +156,7 @@ const en: RxLabels = {
     measurements: "Measurements",
     complaints: "Presenting Complaints",
     findings: "Clinical Findings",
+    assessment: "Assessment",
     prescription: "Prescription",
     colMedicine: "Medicine",
     colDuration: "Duration",
@@ -145,6 +169,16 @@ const en: RxLabels = {
     advice: "Advice",
     therapyPerformed: "Therapy Performed",
     homeExercise: "Home Exercise Programme",
+    results: "Investigation Results",
+    doneToday: "Done Today",
+    plannedNext: "Planned Next",
+    continuingCare: "Continuing Care",
+    dueOn: (d) => `due ${d}`,
+    billing: "Billing",
+    consultationFee: "Consultation Fee",
+    medicineCharge: "Medicine Charges",
+    discount: "Discount",
+    total: "Total",
     qrCaption: "Scan to verify this prescription",
     followUp: (n) => `Follow-up in ${n} day${n === 1 ? "" : "s"}`,
     durationDays: (n) => `${n} day${n === 1 ? "" : "s"}`,
@@ -163,6 +197,7 @@ const hi: RxLabels = {
     measurements: "रीडिंग",
     complaints: "शिकायत",
     findings: "जांच में क्या मिला",
+    assessment: "डायग्नोसिस",
     prescription: "पर्ची",
     colMedicine: "दवाई",
     colDuration: "कितने दिन",
@@ -175,6 +210,16 @@ const hi: RxLabels = {
     advice: "सलाह",
     therapyPerformed: "आज की थेरेपी",
     homeExercise: "घर पर करने वाली एक्सरसाइज़",
+    results: "जांच के नतीजे",
+    doneToday: "आज किया गया",
+    plannedNext: "आगे की योजना",
+    continuingCare: "जारी देखभाल",
+    dueOn: (d) => `${d} तक`,
+    billing: "बिल",
+    consultationFee: "परामर्श शुल्क",
+    medicineCharge: "दवाई का शुल्क",
+    discount: "छूट",
+    total: "कुल",
     qrCaption: "पर्ची चेक करने के लिए स्कैन करें",
     followUp: (n) => `${n} दिन बाद दोबारा दिखाएं`,
     durationDays: (n) => (n === 1 ? "1 दिन तक" : `${n} दिनों तक`),
@@ -198,6 +243,7 @@ const hiLatn: RxLabels = {
     measurements: "Reading",
     complaints: "Shikayat",
     findings: "Jaanch mein kya mila",
+    assessment: "Diagnosis",
     prescription: "Parchi",
     colMedicine: "Dawai",
     colDuration: "Kitne din",
@@ -210,6 +256,16 @@ const hiLatn: RxLabels = {
     advice: "Advice",
     therapyPerformed: "Aaj ki Therapy",
     homeExercise: "Ghar par karne wali Exercise",
+    results: "Jaanch ke Nateeje",
+    doneToday: "Aaj kiya gaya",
+    plannedNext: "Aage ki Yojana",
+    continuingCare: "Jaari Dekhbhaal",
+    dueOn: (d) => `${d} tak`,
+    billing: "Bill",
+    consultationFee: "Consultation Fee",
+    medicineCharge: "Dawai ka Charge",
+    discount: "Discount",
+    total: "Total",
     qrCaption: "Parchi check karne ke liye scan karein",
     followUp: (n) => `${n} din baad dobara dikhayein`,
     durationDays: (n) => `${n} din tak`,

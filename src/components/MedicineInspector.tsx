@@ -1,4 +1,4 @@
-import { FlaskConical, Stethoscope, X } from "lucide-react";
+import { Check, FlaskConical, Stethoscope, X } from "lucide-react";
 import { useEffect } from "react";
 import type { PrescriptionMedicine } from "../types";
 import { freqLabelToKeys, keysToFreqLabel } from "../lib/db";
@@ -13,10 +13,13 @@ type Props = {
   onClose: () => void;
 };
 
+// Same four slots MedicineAddSheet's "When" row uses, same words — this is
+// the second place a doctor sets a medicine's timing, and it should not
+// teach a different notation than the first (docs/aren-modal-design.md).
 const SLOTS = [
-  { key: "M", label: "Morn" },
-  { key: "A", label: "Noon" },
-  { key: "E", label: "Eve" },
+  { key: "M", label: "Morning" },
+  { key: "A", label: "Afternoon" },
+  { key: "E", label: "Evening" },
   { key: "N", label: "Night" },
 ];
 
@@ -57,121 +60,119 @@ export function MedicineInspector({
   };
 
   return (
-    <div className="mi-overlay" role="dialog" aria-modal="true" aria-label={`Edit ${medicine.name}`}>
-      <button className="mi-backdrop" type="button" onClick={onClose} aria-label="Close" />
-      <div className="mi-card">
-        <div className="mi-stripe" />
+    <div className="cs-addmed" role="dialog" aria-modal="true" aria-label={`Edit ${medicine.name}`}>
+      <button className="cs-addmed-scrim" type="button" onClick={onClose} aria-label="Close" />
+      <div className="cs-addmed-panel cs-addmed-inspector">
+        <div className="cs-addmed-topstripe" />
 
-        <div className="mi-header">
-          <div className="mi-header-left">
-            <div className="mi-header-icon"><FlaskConical size={15} /></div>
-            <div>
-              <p className="mi-eyebrow">{isStaging ? "Review before adding" : "Medicine Editor"}</p>
-              <h3 className="mi-name">{medicine.name}</h3>
-            </div>
+        <div className="cs-addmed-head">
+          <span className="cs-glyph is-teal"><FlaskConical size={16} /></span>
+          <div className="cs-addmed-title">
+            <span className="cs-addmed-eyebrow">{isStaging ? "Review before adding" : "Medicine Editor"}</span>
+            <strong>{medicine.name}</strong>
           </div>
-          <button className="mi-close" type="button" onClick={onClose} aria-label="Close">
-            <X size={15} />
+          <button className="cs-addmed-x" type="button" onClick={onClose} aria-label="Close">
+            <X size={16} />
           </button>
         </div>
 
-        <div className="mi-composition-band">
+        <div className="cs-addmed-compband">
           <FlaskConical size={12} />
-          <span className="mi-composition-label">Composition</span>
-          <span className="mi-composition-value">{medicine.composition}</span>
-          <span className="mi-category-pill">{medicine.category}</span>
+          <span className="cs-addmed-compband-label">Composition</span>
+          <span className="cs-addmed-compband-value">{medicine.composition}</span>
+          <span className="cs-addmed-tag">{medicine.category}</span>
         </div>
 
         {(symptoms.length > 0 || findings.length > 0) && (
-          <div className="mi-context-band">
+          <div className="cs-addmed-ctxband">
             <Stethoscope size={12} />
             {symptoms.length > 0 && (
-              <div className="mi-context-group">
-                <span className="mi-context-label">Symptoms</span>
-                <span className="mi-context-chips">
-                  {symptoms.map((s) => <span key={s} className="mi-context-chip">{s}</span>)}
+              <div className="cs-addmed-ctx-group">
+                <span className="cs-addmed-ctx-label">Symptoms</span>
+                <span className="cs-addmed-ctx-chips">
+                  {symptoms.map((s) => <span key={s} className="cs-addmed-ctx-chip">{s}</span>)}
                 </span>
               </div>
             )}
-            {symptoms.length > 0 && findings.length > 0 && <div className="mi-context-sep" />}
+            {symptoms.length > 0 && findings.length > 0 && <div className="cs-addmed-ctx-sep" />}
             {findings.length > 0 && (
-              <div className="mi-context-group">
-                <span className="mi-context-label">Findings</span>
-                <span className="mi-context-chips">
-                  {findings.map((f) => <span key={f} className="mi-context-chip">{f}</span>)}
+              <div className="cs-addmed-ctx-group">
+                <span className="cs-addmed-ctx-label">Findings</span>
+                <span className="cs-addmed-ctx-chips">
+                  {findings.map((f) => <span key={f} className="cs-addmed-ctx-chip">{f}</span>)}
                 </span>
               </div>
             )}
           </div>
         )}
 
-        <div className="mi-form">
-          <div className="mi-row-two">
-            <div className="mi-field">
-              <label className="mi-label">Dosage</label>
+        <div className="cs-addmed-body">
+          <div className="cs-addmed-grid">
+            <section className="cs-addmed-sec">
+              <span className="cs-addmed-label">Dosage</span>
               <input
-                className="mi-input"
+                className="cs-addmed-input"
                 value={medicine.dosage}
                 placeholder="e.g. 1 tablet"
                 onChange={(e) => onUpdate({ ...medicine, dosage: e.target.value })}
               />
-            </div>
-            <div className="mi-field">
-              <label className="mi-label">Duration</label>
+            </section>
+            <section className="cs-addmed-sec">
+              <span className="cs-addmed-label">Duration</span>
               <input
-                className="mi-input"
+                className="cs-addmed-input"
                 value={medicine.duration}
                 placeholder="e.g. 5 days"
                 onChange={(e) => onUpdate({ ...medicine, duration: e.target.value })}
               />
-            </div>
+            </section>
           </div>
 
-          <div className="mi-field">
-            <label className="mi-label">Frequency</label>
-            <div className="mi-slot-row">
+          <section className="cs-addmed-sec">
+            <span className="cs-addmed-label">Frequency</span>
+            <div className="cs-addmed-circles" role="group" aria-label="Dose timing">
               {SLOTS.map((slot) => {
                 const on = activeSlots.includes(slot.key);
                 return (
                   <button
                     key={slot.key}
                     type="button"
-                    aria-label={slot.label}
+                    className={`cs-addmed-circle${on ? " is-on" : ""}`}
                     aria-pressed={on}
+                    title={slot.label}
                     onClick={() => toggleSlot(slot.key)}
-                    className={`mi-slot-btn ${on ? "mi-slot-on" : ""}`}
                   >
-                    <span className="mi-slot-key">{slot.key}</span>
-                    <span className="mi-slot-label">{slot.label}</span>
+                    <span className="cs-addmed-circle-mark" aria-hidden="true" />
+                    <span className="cs-addmed-circle-label">{slot.label}</span>
                   </button>
                 );
               })}
-              <span className="mi-freq-display">{medicine.frequency || "Select timing"}</span>
             </div>
-          </div>
+          </section>
 
-          <div className="mi-field">
-            <label className="mi-label">Notes</label>
+          <section className="cs-addmed-sec">
+            <span className="cs-addmed-label">Notes</span>
             <textarea
-              className="mi-input mi-textarea"
+              className="cs-addmed-input cs-addmed-textarea"
               value={medicine.notes}
               placeholder="After food, avoid driving..."
               rows={2}
               onChange={(e) => onUpdate({ ...medicine, notes: e.target.value })}
             />
-          </div>
+          </section>
         </div>
 
-        <div className="mi-footer">
-          <button className="mi-btn-ghost" type="button" onClick={onClose}>
+        <div className="cs-addmed-foot">
+          <button className="cs-addmed-cancel" type="button" onClick={onClose}>
             Cancel
           </button>
           {isStaging ? (
-            <button className="mi-btn-primary" type="button" onClick={onConfirmStaged}>
-              Add to Prescription →
+            <button className="cs-addmed-confirm" type="button" onClick={onConfirmStaged}>
+              <Check size={15} />
+              Add to Prescription
             </button>
           ) : (
-            <button className="mi-btn-primary" type="button" onClick={onClose}>
+            <button className="cs-addmed-confirm" type="button" onClick={onClose}>
               Done
             </button>
           )}

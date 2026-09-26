@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
     AlertCircle,
     ArrowDown,
@@ -137,6 +138,27 @@ function computeVisitPattern(visits: RealVisit[]): {
 
 function SkelBlock({ width, height = 12, style }: { width: string | number; height?: number; style?: React.CSSProperties }) {
     return <div className="prec-skeleton" style={{ width, height, borderRadius: 4, ...style }} />;
+}
+
+/**
+ * The right sidebar's own compact empty state — Care Plan / Frequent
+ * Complaints / Common Medicines / Visit Pattern used to fall back to a bare
+ * inline-styled sentence the instant a patient had nothing to show (Anmol,
+ * 2026-09-20: "so much crammed small text with... terrible kind of SVG, so
+ * much stressed out section"). A 304px sidebar card has no room for a full
+ * illustrated well (`.prec-timeline-empty`'s own 150-220px minimum would
+ * make FOUR of these stack into a much taller sidebar than the main column
+ * beside it) — this reuses each card's OWN header icon, tone-matched, at
+ * rest in a small circle instead, so an empty card still reads as designed
+ * without inventing a new illustration or a second empty-state language for
+ * one column of the page. */
+function PanelEmpty({ icon, tone, label }: { icon: ReactNode; tone: "blue" | "green" | "pink" | "violet"; label: string }) {
+    return (
+        <div className="prec-panel-empty">
+            <span className={`prec-panel-empty-icon is-${tone}`}>{icon}</span>
+            <span className="prec-panel-empty-label">{label}</span>
+        </div>
+    );
 }
 
 /**
@@ -360,7 +382,7 @@ function VisitRow({
                                     className="prec-tl-action-btn"
                                     onClick={() => onViewPrescription(visit.prescription_id!)}
                                 >
-                                    <FileText size={11} />
+                                    <FileText size={13} />
                                     View Prescription
                                 </button>
                                 <button
@@ -368,7 +390,7 @@ function VisitRow({
                                     className="prec-tl-action-btn prec-tl-action-btn--whatsapp"
                                     onClick={() => onSendWhatsApp(visit)}
                                 >
-                                    <MessageCircle size={11} />
+                                    <MessageCircle size={13} />
                                     Send via WhatsApp
                                 </button>
                             </div>
@@ -389,7 +411,7 @@ function VisitRow({
                                         <div className="prec-snapshot-chips">
                                             {visit.findings.map((f) => (
                                                 <span key={f.name} className={`prec-finding-chip${f.is_abnormal ? " is-abnormal" : ""}`}>
-                                                    {f.is_abnormal && <AlertCircle size={8} style={{ marginRight: 2 }} />}
+                                                    {f.is_abnormal && <AlertCircle size={10} style={{ marginRight: 3 }} />}
                                                     {f.name}
                                                 </span>
                                             ))}
@@ -437,7 +459,7 @@ function VisitRow({
                                 <div className="prec-tl-med-list">
                                     {visit.medicines.map((m) => (
                                         <div key={m.medicine_id} className="prec-tl-med-row">
-                                            <Pill size={10} className="prec-tl-med-icon" />
+                                            <Pill size={13} className="prec-tl-med-icon" />
                                             <span className="prec-tl-med-name">{m.name}</span>
                                             <span className="prec-tl-med-detail">
                                                 {m.dosage_mg && `${m.dosage_mg}mg`}
@@ -455,7 +477,7 @@ function VisitRow({
                                 <div className="prec-tl-med-list">
                                     {visit.exercise_names.map((label) => (
                                         <div key={label} className="prec-tl-med-row">
-                                            <TrendingUp size={10} className="prec-tl-med-icon" />
+                                            <TrendingUp size={13} className="prec-tl-med-icon" />
                                             <span className="prec-tl-med-name">{label}</span>
                                         </div>
                                     ))}
@@ -773,7 +795,7 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         // on a patient with almost no history instead of
                                         // collapsing into slivers of different sizes.
                                         <div className="prec-timeline-empty is-compact">
-                                            <BlankSnapshotArt />
+                                            <div className="prec-timeline-empty-art is-pink"><BlankSnapshotArt /></div>
                                             <p className="prec-timeline-empty-title">Nothing charted yet</p>
                                             <p className="prec-timeline-empty-sub">
                                                 Complaints and findings from a completed consult show up here.
@@ -816,7 +838,7 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         // real reason once: a trend is two readings of the
                                         // same measurement, so it cannot exist yet.
                                         <div className="prec-timeline-empty is-compact">
-                                            <BlankTrendArt />
+                                            <div className="prec-timeline-empty-art is-blue"><BlankTrendArt /></div>
                                             <p className="prec-timeline-empty-title">No trend to plot yet</p>
                                             <p className="prec-timeline-empty-sub">
                                                 A trend needs the same measurement recorded at two visits.
@@ -882,7 +904,7 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         // just a sentence, since this page already knows
                                         // how to start one.
                                         <div className="prec-timeline-empty">
-                                            <BlankTimelineArt />
+                                            <div className="prec-timeline-empty-art is-violet"><BlankTimelineArt /></div>
                                             <p className="prec-timeline-empty-title">
                                                 {inProgressVisits.length > 0
                                                     ? "No visit has been finished for this patient yet"
@@ -964,61 +986,106 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                         </div>
                     </div>
 
-                    {/* Everything below reads `visits` — which starts empty while the
-                        fetch is in flight — except the Care Plan card, which reads
-                        `row.care_plan_progress` directly (already loaded with the row
-                        itself). Skeleton the rest rather than let them just not
-                        appear and pop in a moment later: the same "silently missing,
-                        not loading" problem just fixed on the Overview sidebar.
-
-                        Always rendered now, care plan or not — a sidebar that drops a
-                        whole card for every unmet condition is how four real cards
-                        become one card and a wall of white. No plan says so, once,
-                        in the same card shape everything else keeps. */}
-                    <div className="prec-panel-section">
-                        <div className="prec-panel-card">
-                            <div className="prec-panel-card-header">
-                                <TrendingUp size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
-                                <span className="prec-panel-card-title">Care Plan</span>
-                            </div>
-                            <div className="prec-panel-card-body">
-                                {row.care_plan_progress ? (
-                                    <>
-                                        <div className="prec-careplan-label">{row.care_plan_session_label}</div>
-                                        <div className="prec-careplan-bar">
-                                            <span style={{
-                                                width: `${Math.min(100, Math.round((row.care_plan_progress.sessionsCompleted / row.care_plan_progress.targetSessions) * 100))}%`,
-                                            }} />
-                                        </div>
-                                        <div className="prec-careplan-sub">
-                                            {Math.max(0, row.care_plan_progress.targetSessions - row.care_plan_progress.sessionsCompleted)} sessions remaining
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="prec-placeholder-dash">No active care plan</div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
                     {loading ? (
-                        [0, 1, 2].map((i) => (
-                            <div className="prec-panel-section" key={i}>
+                        <>
+                            <div className="prec-panel-section prec-panel-pair">
+                                {[0, 1].map((i) => (
+                                    <div className="prec-panel-card" key={i}>
+                                        <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                            {[0, 1].map((j) => <SkelBlock key={j} width={`${85 - j * 10}%`} />)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            {[0, 1].map((i) => (
+                                <div className="prec-panel-section" key={i}>
+                                    <div className="prec-panel-card">
+                                        <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                            {[0, 1, 2].map((j) => <SkelBlock key={j} width={`${85 - j * 10}%`} />)}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    ) : (
+                        // Care Plan + Visit Pattern paired side by side — both
+                        // compact stat cards, never bar-list content that
+                        // needs the full column width to stay readable
+                        // (Frequent Complaints/Common Medicines keep their own
+                        // full-width rows below, unchanged). The same "paired,
+                        // never a lone narrow strip" rule Practice page's own
+                        // grid already follows (Anmol, 2026-09-20: "we have
+                        // like two grid layout, but we can make it kind of
+                        // three grid" — this sidebar reading as its own
+                        // 2-column grid, beside the main column and its own
+                        // internal shape, is that same idea applied here).
+                        // Both always render now, empty or not — see
+                        // `PanelEmpty`'s own comment for why neither falls
+                        // back to a bare sentence.
+                        <>
+                            <div className="prec-panel-section prec-panel-pair">
                                 <div className="prec-panel-card">
-                                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                        {[0, 1, 2].map((j) => <SkelBlock key={j} width={`${85 - j * 10}%`} />)}
+                                    <div className="prec-panel-card-header">
+                                        <TrendingUp size={13} className="prec-panel-card-icon prec-panel-card-icon--blue" />
+                                        <span className="prec-panel-card-title">Care Plan</span>
+                                    </div>
+                                    <div className="prec-panel-card-body">
+                                        {row.care_plan_progress ? (
+                                            <>
+                                                <div className="prec-careplan-label">{row.care_plan_session_label}</div>
+                                                <div className="prec-careplan-bar">
+                                                    <span style={{
+                                                        width: `${Math.min(100, Math.round((row.care_plan_progress.sessionsCompleted / row.care_plan_progress.targetSessions) * 100))}%`,
+                                                    }} />
+                                                </div>
+                                                <div className="prec-careplan-sub">
+                                                    {Math.max(0, row.care_plan_progress.targetSessions - row.care_plan_progress.sessionsCompleted)} left
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <PanelEmpty
+                                                icon={<TrendingUp size={14} />} tone="blue"
+                                                label="No care plan yet"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="prec-panel-card">
+                                    <div className="prec-panel-card-header">
+                                        <Calendar size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
+                                        <span className="prec-panel-card-title">Visit Pattern</span>
+                                    </div>
+                                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                        {pattern.lastVisitDays !== null ? (
+                                            <>
+                                                <div className="prec-pattern-row">
+                                                    <span>Last visit</span>
+                                                    <b>{pattern.lastVisitDays === 0 ? "Today" : `${pattern.lastVisitDays}d ago`}</b>
+                                                </div>
+                                                {pattern.avgGapDays !== null && (
+                                                    <div className="prec-pattern-row">
+                                                        <span>Avg. gap</span>
+                                                        <b>{pattern.avgGapDays}d</b>
+                                                    </div>
+                                                )}
+                                                {pattern.mostActiveMonth && (
+                                                    <div className="prec-pattern-row">
+                                                        <span>Most active</span>
+                                                        <b>{pattern.mostActiveMonth}</b>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <PanelEmpty
+                                                icon={<Calendar size={14} />} tone="pink"
+                                                label="Not enough visits"
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             </div>
-                        ))
-                    ) : (
-                        // All three always render now — `RankedBarList` already
-                        // says "No data yet." for an empty list, and Visit
-                        // Pattern gets the same dash fallback below; a card
-                        // that disappears whenever a new patient has nothing
-                        // to rank yet is the "half the sidebar is missing"
-                        // look this pass is fixing.
-                        <>
+
                             <div className="prec-panel-section">
                                 <div className="prec-panel-card">
                                     <div className="prec-panel-card-header">
@@ -1026,7 +1093,14 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         <span className="prec-panel-card-title">Frequent Complaints</span>
                                     </div>
                                     <div className="prec-panel-card-body">
-                                        <RankedBarList items={frequentComplaints} />
+                                        {frequentComplaints.length > 0 ? (
+                                            <RankedBarList items={frequentComplaints} />
+                                        ) : (
+                                            <PanelEmpty
+                                                icon={<Stethoscope size={14} />} tone="violet"
+                                                label="No complaints charted yet"
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1038,39 +1112,13 @@ export function PatientRecord({ row: rowProp, specialty, onBack, onStartConsult,
                                         <span className="prec-panel-card-title">Common Medicines</span>
                                     </div>
                                     <div className="prec-panel-card-body">
-                                        <RankedBarList items={commonMedicines} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="prec-panel-section">
-                                <div className="prec-panel-card">
-                                    <div className="prec-panel-card-header">
-                                        <Calendar size={13} className="prec-panel-card-icon prec-panel-card-icon--pink" />
-                                        <span className="prec-panel-card-title">Visit Pattern</span>
-                                    </div>
-                                    <div className="prec-panel-card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                        {pattern.lastVisitDays !== null ? (
-                                            <>
-                                                <div className="prec-pattern-row">
-                                                    <span>Last visit</span>
-                                                    <b>{pattern.lastVisitDays === 0 ? "Today" : `${pattern.lastVisitDays}d ago`}</b>
-                                                </div>
-                                                {pattern.avgGapDays !== null && (
-                                                    <div className="prec-pattern-row">
-                                                        <span>Avg. gap</span>
-                                                        <b>{pattern.avgGapDays}d between visits</b>
-                                                    </div>
-                                                )}
-                                                {pattern.mostActiveMonth && (
-                                                    <div className="prec-pattern-row">
-                                                        <span>Most active</span>
-                                                        <b>{pattern.mostActiveMonth}</b>
-                                                    </div>
-                                                )}
-                                            </>
+                                        {commonMedicines.length > 0 ? (
+                                            <RankedBarList items={commonMedicines} />
                                         ) : (
-                                            <div className="prec-placeholder-dash">No visits recorded yet</div>
+                                            <PanelEmpty
+                                                icon={<Pill size={14} />} tone="blue"
+                                                label="No medicines prescribed yet"
+                                            />
                                         )}
                                     </div>
                                 </div>

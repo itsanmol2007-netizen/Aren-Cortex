@@ -24,12 +24,14 @@
 // branch to the picker in App.tsx. Nothing else moves.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ClinicalCommandBar, CaseSheet, type CaseSheetEntry } from "./CaseSheet";
+import { addStoryNote, removeStoryNote, storyNotes, type Story } from "./story";
 import { durationCandidates } from "./duration";
 import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
 import { useRovingList } from "../../hooks/useRovingList";
+import type { SiteRef } from "../../lib/body/clinicalSite";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
 import type { TrendVisit } from "./trend";
@@ -39,7 +41,7 @@ interface Props {
     observables: Observable[];
     /** every label currently on the chart, for the ✓ in a search result */
     onChartSet: Set<string>;
-    onObservableToggle: (o: Observable) => void;
+    onObservableToggle: (o: Observable, opts?: { deferSite?: boolean }) => void;
     caseSheetEntries: CaseSheetEntry[];
     onCaseSheetRemove: (label: string) => void;
     /**
@@ -54,6 +56,16 @@ interface Props {
     onSetSymptomDuration?: (label: string, days: number | null) => void;
     /** take a carried-forward condition off the patient — see CaseSheet's RetireMenu */
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
+    /** Cardiac History enrichment — see CaseSheet's OnsetPrompt / conditionDetail.ts */
+    detailWorthyLabels?: Set<string>;
+    onSetOnsetNote?: (label: string, note: string) => void;
+    /** sited findings — see CaseSheet's FindingSitePrompt */
+    knownSites?: SiteRef[];
+    onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
+    askSiteLabel?: string | null;
+    onAskSiteHandled?: () => void;
+    /** the command bar's where-slot — see ClinicalCommandBar */
+    onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
     /** findings that co-occur with what is already charted — see examSuggestions.ts */
@@ -75,6 +87,11 @@ interface Props {
     searchRef?: React.RefObject<HTMLInputElement>;
     /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
     measurementsRef?: React.RefObject<HTMLElement | null>;
+    /** The visit's story, for free text typed into the bar ("fell from bike
+     *  yesterday"). Only its note is used here; the structured Story stays
+     *  physiotherapy's. Absent: the bar offers no note row. */
+    story?: Story;
+    onStoryChange?: (s: Story) => void;
     /** this doctor's prescription templates — see ClinicalCommandBar's own doc comment */
     templates?: PrescriptionTemplateSummary[];
     onApplyTemplate?: (templateId: number) => void;
@@ -84,10 +101,12 @@ export function GeneralOpdInputs({
     observables, onChartSet, onObservableToggle, caseSheetEntries, onCaseSheetRemove,
     symptomDurations, onSetSymptomDuration,
     intensities, onIntensityChange, relatedFindings, onBrowseFinding, onRetireCarried,
+    detailWorthyLabels, onSetOnsetNote,
+    knownSites, onSetFindingSites, askSiteLabel, onAskSiteHandled, onSiteChange,
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
-    templates, onApplyTemplate,
+    templates, onApplyTemplate, story, onStoryChange,
 }: Props) {
     /**
      * ── Reaching "Related" without a mouse ───────────────────────────────
@@ -130,6 +149,25 @@ export function GeneralOpdInputs({
         [onSetSymptomDuration, caseSheetEntries, slugByLabel]
     );
 
+    /**
+     * "Type Previous MI, get asked since when" — in the search box's own
+     * motion, not a separate click on the chip afterward. See
+     * `CaseSheet.tsx`'s `autoOpenOnsetLabel` doc comment for the full
+     * mechanism; this is the one place that decides WHEN to fire it: a
+     * detail-worthy history observable, picked from THIS bar specifically
+     * (not a Related chip, not the browse sheet, not CaseSheet's own "+
+     * since"), and only on the ADD half of the toggle — `onChartSet.has`
+     * checked BEFORE the toggle runs is what tells add and remove apart.
+     */
+    const [autoOnsetLabel, setAutoOnsetLabel] = useState<string | null>(null);
+    const handleCommandBarToggle = useCallback((o: Observable, opts?: { deferSite?: boolean }) => {
+        const isAdding = !onChartSet.has(o.label);
+        onObservableToggle(o, opts);
+        if (isAdding && o.kind === "history" && detailWorthyLabels?.has(o.label) && onSetOnsetNote) {
+            setAutoOnsetLabel(o.label);
+        }
+    }, [onChartSet, onObservableToggle, detailWorthyLabels, onSetOnsetNote]);
+
     return (
         <>
             {/* The page's one input, above every card because it belongs to the
@@ -137,7 +175,7 @@ export function GeneralOpdInputs({
             <ClinicalCommandBar
                 observables={observables}
                 onSheet={onChartSet}
-                onToggle={onObservableToggle}
+                onToggle={handleCommandBarToggle}
                 disabled={disabled}
                 searchRef={searchRef}
                 onEmptyDown={() => relatedRoving.move(1)}
@@ -145,9 +183,12 @@ export function GeneralOpdInputs({
                 onEmptyEnter={() => relatedRoving.activate()}
                 templates={templates}
                 onApplyTemplate={onApplyTemplate}
+                siteKnown={knownSites}
+                onSiteChange={onSiteChange}
                 durationCandidates={pendingDurations}
                 durationsByLabel={symptomDurations}
                 onDurationAnswer={onSetSymptomDuration}
+                onStoryNote={story && onStoryChange ? (text) => onStoryChange(addStoryNote(story, text)) : undefined}
             />
 
             {/* One box in place of three (History, Symptoms, Findings): the Case
@@ -161,12 +202,22 @@ export function GeneralOpdInputs({
                     onToggle={onObservableToggle}
                     onRemove={onCaseSheetRemove}
                     onRetireCarried={onRetireCarried}
+                    knownSites={knownSites}
+                    onSetFindingSites={onSetFindingSites}
+                    autoOpenSiteLabel={askSiteLabel}
+                    onAutoOpenSiteHandled={onAskSiteHandled}
+                    detailWorthyLabels={detailWorthyLabels}
+                    onSetOnsetNote={onSetOnsetNote}
+                    autoOpenOnsetLabel={autoOnsetLabel}
+                    onAutoOpenOnsetHandled={() => setAutoOnsetLabel(null)}
                     intensities={intensities}
                     onIntensityChange={onIntensityChange}
                     related={relatedFindings}
                     onBrowse={onBrowseFinding}
                     disabled={disabled}
                     relatedRef={relatedRef}
+                    storyNotes={story ? storyNotes(story) : []}
+                    onStoryNoteRemove={story && onStoryChange ? (i) => onStoryChange(removeStoryNote(story, i)) : undefined}
                     onFocusSearch={() => searchRef?.current?.focus()}
                 />
 

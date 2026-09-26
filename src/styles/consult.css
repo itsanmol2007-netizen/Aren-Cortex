@@ -250,14 +250,14 @@
        slightly too SHORT only adds a little scroll to `.cs-work`, while one
        slightly too tall pushes its bottom edge past the viewport, and only
        one of those two errors is invisible. */
-    height: calc(100vh - var(--app-header-h, 84px) - 12px);
+    height: calc(100vh - var(--app-header-h, 84px) - 20px);
     /* The 1720px cap that used to sit on `.app-shell` — see layout.css for why
        it had to move off the shell when the nav rail arrived. */
     max-width: 1720px;
     width: calc(100% - 24px);
-    margin: 8px auto 0;
+    margin: 14px auto 0;
     border: 1px solid var(--cs-line);
-    border-radius: 13px;
+    border-radius: 14px;
     background: var(--cs-page);
     /* `clip`, NOT `hidden`. Both clip to the radius, but `hidden` creates a
        scroll container, and nothing below should ever look to `.cs-shell`
@@ -335,6 +335,18 @@ body.cs-locked-shell {
    The strip does not scroll with the page. Every ranked column and the plan
    are reachable at any point in the consultation, because the doctor moves
    between examining and prescribing continuously, not in one direction. */
+/* Extra clearance when the longitudinal band sits directly above, collapsed
+   or not — its border-bottom reads as a second header line, and .cs-page's
+   normal 12px top padding isn't enough breathing room off of it, which
+   pushed the Case Sheet's search bar right up against it (annotated
+   screenshot, 2026-09-21: "Fix this Cramped Up UI, we need some Padding
+   here its also there when the top longitudinal strip is there with the
+   Case sheet Search bar"). `.cs-lt` renders nothing at all for a first
+   visit, so this never fires there and the normal padding stays correct. */
+.cs-lt + .cs-page {
+    padding-top: 10px;
+}
+
 .cs-page {
     flex: 1;
     min-height: 0;
@@ -434,6 +446,18 @@ body.cs-locked-shell {
    renders only when there is a specialty module to show. */
 .cs-row-exam {
     grid-template-columns: minmax(0, 72fr) minmax(0, 28fr);
+}
+
+/* Body map launcher beside Goals — physio/orthopedics only (PhysioInputs.tsx).
+   Same 60/40 as `.cs-row-obj` above, on purpose: two rows on this page
+   already establish "the wide thing is 60, the narrow thing is 40", and
+   Goals sitting alone at full width read as mostly-empty space under one
+   short search box rather than a second, different ratio to learn. */
+.cs-row-bodygoal {
+    grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+    /* Both cells share the taller one's height, so the shorter body-map
+       strip never leaves a dead white gap under itself. */
+    align-items: stretch;
 }
 
 /* Plan — the two output placeholders, side by side.
@@ -826,6 +850,7 @@ body.cs-locked-shell {
     display: grid;
     place-items: center;
     flex: none;
+    align-self: center;
     width: 22px;
     height: 22px;
     padding: 0;
@@ -834,6 +859,7 @@ body.cs-locked-shell {
     border-radius: 50%;
     background: transparent;
     color: var(--cs-faint);
+    line-height: 0;
     cursor: pointer;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
@@ -1086,6 +1112,7 @@ body.cs-locked-shell {
 }
 
 .cs-meas {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1120,6 +1147,16 @@ body.cs-locked-shell {
     font-weight: 550;
     letter-spacing: 0.01em;
     white-space: nowrap;
+    /* A long label ("Hemoglobin (g/dL)", "TSH (µIU/mL)") plus the suggested
+       mark used to simply overflow the cell sideways rather than wrap or
+       clip — visible in the browser once fields longer than "BP (mmHg)"
+       started actually getting suggested (2026-09-19). Truncated with an
+       ellipsis instead; `title` on the cell (see MeasureCell) carries the
+       full text for a doctor who wants to read it in full. */
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .cs-meas.is-warn .cs-meas-label {
@@ -1931,74 +1968,188 @@ body.cs-locked-shell {
     font-size: 12.5px;
 }
 
-/* ATTACHMENT PREVIEW — see `AttachmentPreviewModal.tsx`'s own header. Inline
-   inside ChartSurface instead of a new browser tab. */
-.cs-attach-preview {
+/* ATTACHMENT PREVIEW — see `AttachmentPreviewModal.tsx`'s own header.
+   One stage, always full viewport (2026-09-21b) — no small in-modal
+   preview any more, so this is the whole surface: a dark overlay, a
+   thin header carrying the file's label, the content area (image with
+   zoom/pan, a PDF iframe, or the plain-file fallback), and the image's
+   own zoom controls in the corner. */
+.cs-attach-fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 23, 51, 0.94);
     display: flex;
-    min-height: 30vh;
+    flex-direction: column;
+    z-index: 10000;
+    animation: cs-attach-fullscreen-fade 0.15s ease;
+}
+
+@keyframes cs-attach-fullscreen-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.cs-attach-fullscreen-header {
+    flex: none;
+    padding: 18px 72px 0 24px;
+}
+
+.cs-attach-fullscreen-label {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.cs-attach-fullscreen-container {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    border: 1px solid var(--cs-line);
-    border-radius: 12px;
-    background: var(--cs-page);
+    padding: 12px 24px 24px;
 }
 
-.cs-attach-preview-frame {
-    position: relative;
-    width: 100%;
-    max-height: 62vh;
-    margin: 0 auto;
-}
-
-.cs-attach-preview-skel {
-    position: absolute;
-    inset: 0;
-    border-radius: 10px;
-    background: linear-gradient(90deg, #eef0f4 25%, #e4e7ee 37%, #eef0f4 63%);
-    background-size: 200% 100%;
-    animation: cs-attach-preview-shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes cs-attach-preview-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .cs-attach-preview-skel { animation: none; }
-}
-
-.cs-attach-preview-img {
-    width: 100%;
-    height: 100%;
+.cs-attach-fullscreen-img {
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
-    transition: opacity 0.2s ease;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
-.cs-attach-preview-pdf {
+.cs-attach-fullscreen-pdf {
     width: 100%;
     height: 100%;
     border: 0;
+    border-radius: 10px;
+    background: #fff;
     transition: opacity 0.2s ease;
 }
 
-.cs-attach-preview-other {
+.cs-attach-fullscreen-other {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 40px 24px;
-    color: var(--cs-faint);
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.7);
     text-align: center;
 }
 
-.cs-attach-preview-other a {
-    color: var(--cs-blue);
-    font-size: 13px;
+.cs-attach-fullscreen-other a {
+    color: #9cc2ff;
+    font-size: 13.5px;
     font-weight: 700;
     text-decoration: underline;
     text-underline-offset: 2px;
+}
+
+.cs-attach-fullscreen-error {
+    margin: auto;
+    color: #ff9d8f;
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+/* The delayed skeleton — see AttachmentPreviewModal.tsx's own note on
+   why this only appears after a beat, never instantly. A shimmer band
+   sweeping left -> right, slow (2.2s, not the ~1.4s a small inline
+   thumbnail used) since it now fills a much bigger, calmer surface. */
+.cs-attach-fullscreen-skel {
+    position: absolute;
+    inset: 24px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.cs-attach-fullscreen-skel-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        100deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.09) 50%,
+        transparent 70%
+    );
+    background-size: 250% 100%;
+    animation: cs-attach-fullscreen-shimmer 2.2s ease-in-out infinite;
+}
+
+@keyframes cs-attach-fullscreen-shimmer {
+    0% { background-position: -150% 0; }
+    100% { background-position: 150% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-attach-fullscreen-skel-shimmer { animation: none; }
+}
+
+.cs-attach-fullscreen-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    z-index: 10001;
+}
+
+.cs-attach-fullscreen-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 1);
+}
+
+.cs-attach-fullscreen-zoom-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10001;
+    display: flex;
+    gap: 8px;
+}
+
+.cs-attach-fullscreen-zoom-btn {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.cs-attach-fullscreen-zoom-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-attach-fullscreen-overlay {
+        animation: none;
+    }
+
+    .cs-attach-fullscreen-close,
+    .cs-attach-fullscreen-zoom-btn {
+        transition: none;
+    }
 }
 
 /* UploadFromPhoneModal.tsx's body used to be styled with a dedicated
@@ -2068,14 +2219,76 @@ body.cs-locked-shell {
 
 .cs-meas.is-suggested .cs-meas-label {
     color: var(--cs-blue);
+    /* Room for the "+" badge in the corner, so a long label's ellipsis
+       truncates before it, never underneath it. */
+    padding-right: 12px;
 }
 
+/* A fixed corner badge, not inline text after the label — it used to sit
+   inside `.cs-meas-label` and push a long label ("Hemoglobin (g/dL)",
+   "TSH (µIU/mL)") past the cell's edge instead of wrapping or clipping.
+   Absolute here means it never competes with the label for width, whatever
+   the label's own length turns out to be. */
 .cs-meas-mark {
-    margin-left: 4px;
+    position: absolute;
+    top: 7px;
+    right: 8px;
     color: var(--cs-blue);
     font-size: 12.5px;
     font-style: normal;
     font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+}
+
+/* The custom-measurement fallback's own cell — see CustomMeasureCell.
+   Teal rather than the plain grey/blue of a catalogue field, the same
+   accent AddMedicineSheet's own doctor-created-content uses, so a field
+   nothing in the catalogue authored reads as visually distinct from one
+   that did — without implying anything is wrong with it (amber stays
+   reserved for out-of-range and "please measure this"). */
+.cs-meas.is-custom {
+    border-color: rgba(15, 118, 110, 0.28);
+}
+.cs-meas.is-custom.is-filled {
+    border-color: rgba(15, 118, 110, 0.45);
+}
+.cs-meas.is-custom .cs-meas-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    overflow: visible;
+}
+.cs-meas-custom-labeltext {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-meas-custom-remove {
+    flex: none;
+    border: 0;
+    background: none;
+    padding: 1px;
+    margin: -1px;
+    color: var(--cs-faint);
+    display: inline-flex;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.12s ease;
+}
+.cs-meas.is-custom:hover .cs-meas-custom-remove,
+.cs-meas.is-custom:focus-within .cs-meas-custom-remove {
+    opacity: 1;
+}
+.cs-meas-custom-remove:hover { color: #dc2626; }
+.cs-meas-custom-unit {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -2105,7 +2318,7 @@ body.cs-locked-shell {
 .cs-sug-controls {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 10px;
     padding: 8px 16px 0;
 }
@@ -2123,6 +2336,21 @@ body.cs-locked-shell {
     flex-wrap: wrap;
     gap: 6px;
 }
+/* One line, always: the tabs scroll sideways rather than wrapping into a
+   second row of chrome above the list. */
+.cs-sug-filter.is-oneline {
+    flex: 1;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    padding-right: 20px;
+}
+.cs-sug-filter.is-oneline::-webkit-scrollbar { display: none; }
+.cs-sug-filter.is-oneline .cs-sug-filter-btn { flex: none; padding: 5px 10px; white-space: nowrap; }
+.cs-sug-controls .cs-ranked-count { flex: none; margin-left: auto; }
 
 .cs-sug-filter-btn {
     display: flex;
@@ -3177,7 +3405,7 @@ body.cs-locked-shell {
     align-items: center;
     gap: 2px 12px;
     border-radius: 10px;
-    padding: 11px 8px;
+    padding: 9px 8px;
 }
 
 .cs-sug + .cs-sug::before {
@@ -3224,7 +3452,16 @@ body.cs-locked-shell {
 .cs-sug-icon.is-test { background: #2563eb; }
 .cs-sug-icon.is-referral { background: #8b5cf6; }
 .cs-sug-icon.is-advice { background: #10b981; }
-.cs-sug-icon.is-exercise { background: #0ea5e9; }
+/* Exercise: the dumbbell glyph carries its identity; teal, the colour of
+   what the clinician prescribes (colour.md) — sky blue was off-palette. */
+.cs-sug-icon.is-exercise { background: #0f766e; }
+/* These three had no colour at all — a white glyph on nothing, so the
+   icon column read as blank space. Teal for what the doctor does or gives
+   (interventions, medicine), rose for what the patient reports (an
+   impairment) — colour.md's own meanings. */
+.cs-sug-icon.is-modality { background: var(--cs-teal); }
+.cs-sug-icon.is-medicine { background: #0d9488; }
+.cs-sug-icon.is-impairment { background: var(--cs-rose); }
 
 .cs-sug-main { min-width: 0; }
 
@@ -3241,7 +3478,16 @@ body.cs-locked-shell {
 .cs-sug-kind.is-test { color: #1d4ed8; }
 .cs-sug-kind.is-referral { color: #6d28d9; }
 .cs-sug-kind.is-advice { color: #047857; }
-.cs-sug-kind.is-exercise { color: #0369a1; }
+.cs-sug-kind.is-exercise { color: #0f766e; }
+.cs-sug-kind.is-modality { color: var(--cs-teal); }
+.cs-sug-kind.is-medicine { color: #0f766e; }
+.cs-sug-kind.is-impairment { color: var(--cs-rose); }
+/* The kind on the relevance line, not a line of its own. */
+.cs-sug-kind.is-inline {
+    display: inline;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+}
 
 .cs-sug-name {
     display: flex;
@@ -4579,7 +4825,8 @@ body.cs-locked-shell {
     .cs-page { grid-template-columns: 1fr; }
     .cs-row-sub,
     .cs-row-obj,
-    .cs-row-exam { grid-template-columns: 1fr; }
+    .cs-row-exam,
+    .cs-row-bodygoal { grid-template-columns: 1fr; }
     /* Nothing is beside anything at this width, so there is no neighbour to
        stretch and a bounded height would crop for no reason. */
     .cs-row-plan {
@@ -4641,6 +4888,13 @@ body.cs-locked-shell {
 
 .cs-chartmodal-body .cs-body {
     width: 100%;
+}
+
+/* Above the glass's specular band (`.cs-body::before`, absolutely placed),
+   which otherwise washed the Front/Back toggle and the head of the figure
+   to near-white. */
+.cs-body > * {
+    position: relative;
 }
 
 .cs-body.is-disabled {
@@ -4715,6 +4969,308 @@ body.cs-locked-shell {
 .cs-body-orient {
     color: var(--cs-faint);
     font-size: 11.5px;
+}
+
+/* ── The fixed two-column layout (2026-09-23) — see JointMapCard.tsx's own
+   comment on the reflow bug this replaces. Stacked by default (the small
+   inline card, where a taller detail panel just pushes the page down like
+   any other growing card — not the jarring "the clicked target moved"
+   failure, since nothing here is centered on screen). Side-by-side only
+   inside the chart modal, below, where both the extra width and the
+   centered-modal-recenters-on-resize problem actually live. */
+.cs-jmap-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.cs-jmap-figure-col {
+    flex: none;
+    margin-bottom: 0;
+}
+
+.cs-jmap-detail-col {
+    min-width: 0;
+}
+
+.cs-chartmodal-body .cs-jmap-layout {
+    flex-direction: row;
+    align-items: flex-start;
+}
+
+.cs-chartmodal-body .cs-jmap-figure-col {
+    width: 200px;
+}
+
+.cs-chartmodal-body .cs-jmap-figure-col .cs-body-svg {
+    max-width: 180px;
+}
+
+/* The height that matters: fixed regardless of whether a joint is selected,
+   so selecting one never changes this column's own size, which is what
+   stopped the outer (centered) modal from resizing and re-centering out
+   from under the doctor's click. Content beyond this scrolls internally —
+   a long list of special tests never grows the column, it scrolls in it. */
+.cs-chartmodal-body .cs-jmap-detail-col {
+    flex: 1;
+    max-height: 460px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+/* ── THE JOINT PANEL (Step 3, 2026-09-25) — JointMapCard.tsx ─────────────
+   What is found at the joint just clicked: what is recorded there, in the
+   Case Sheet's own rose and teal, and one field to add more
+   (JointFindingField.tsx). */
+.cs-jmap-panel {
+    padding: 12px 12px 12px;
+    border-radius: 12px;
+    border-color: var(--cs-line);
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.04), 0 6px 18px rgba(16, 28, 46, 0.05);
+}
+.cs-jmap-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.cs-jmap-panel-pin {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #f4fdfa 0%, #dbf4eb 100%);
+    box-shadow: inset 0 0 0 1px #a4e3d1;
+    color: #0b6a62;
+}
+.cs-jmap-panel-titles {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.cs-jmap-panel-title {
+    color: var(--cs-ink);
+    font-size: 14.5px;
+    font-weight: 750;
+    letter-spacing: -0.005em;
+    line-height: 1.2;
+}
+.cs-jmap-panel-sub {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 550;
+}
+.cs-jmap-panel .cs-dchart-panel-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+}
+.cs-jmap-panel .cs-dchart-panel-close:hover { background: rgba(16, 28, 46, 0.06); }
+
+/* Recorded here → tokens; one field → a list. Never a wall of option
+   chips: past a handful of choices the rule everywhere in the consult is a
+   list you open, not every option drawn at once. */
+.cs-jf { display: flex; flex-direction: column; gap: 7px; }
+.cs-jf-tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-jf-token {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #a4e3d1;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #f4fdfa 0%, #dbf4eb 100%);
+    padding: 3px 4px 3px 9px;
+    color: #0b6a62;
+    font-size: 12.5px;
+    font-weight: 650;
+    line-height: 1.3;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(15, 118, 110, 0.1);
+}
+.cs-jf-token.is-symptom,
+.cs-jf-token.is-history {
+    border-color: #f6c3cd;
+    background: linear-gradient(180deg, #fff8f9 0%, #ffe6ea 100%);
+    color: #b3103b;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(190, 18, 60, 0.1);
+}
+.cs-jf-token > button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: inherit;
+    opacity: 0.5;
+    cursor: pointer;
+}
+.cs-jf-token > button:hover { background: rgba(0, 0, 0, 0.07); opacity: 1; }
+
+.cs-jf-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    margin-top: 3px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-faint);
+    cursor: text;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cs-jf-field:hover { border-color: #aeb9c9; }
+.cs-jf-field.is-open,
+.cs-jf-field:focus-within {
+    border-color: rgba(15, 118, 110, 0.55);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    color: var(--cs-teal);
+}
+/* Its own class: base.css styles every bare input (fill, border, ring). */
+.cs-jf-input,
+.cs-jf-input:hover,
+.cs-jf-input:focus {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 550;
+}
+.cs-jf-input::placeholder { color: var(--cs-faint); font-weight: 500; }
+
+.cs-jf-list {
+    position: fixed;
+    z-index: 1300;
+    max-height: 300px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 14px 34px rgba(16, 28, 46, 0.18);
+}
+.cs-jf-listhead {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    padding: 7px 9px 5px;
+    color: var(--cs-teal);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-jf-group {
+    margin: 0;
+    padding: 8px 9px 3px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-jf-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 7px 9px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-jf-row.is-active { background: var(--cs-blue-soft); }
+.cs-jf-check {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #c9d1dd;
+    border-radius: 5px;
+    background: #fff;
+}
+.cs-jf-row.is-here .cs-jf-check { border-color: var(--cs-teal); background: var(--cs-teal); color: #fff; }
+.cs-jf-row.is-here.is-symptom .cs-jf-check,
+.cs-jf-row.is-here.is-history .cs-jf-check { border-color: #be123c; background: #be123c; }
+.cs-jf-rowlabel { flex: 1; min-width: 0; }
+.cs-jf-row > em {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 550;
+}
+.cs-jf-none { margin: 0; padding: 9px 10px; color: var(--cs-faint); font-size: 12.5px; }
+
+.cs-jmap-panel .cs-attach-tagrow:last-child { margin-top: 10px; gap: 8px; }
+/* The site note, drawn like the add field above it rather than as a
+   second, differently-styled input. */
+.cs-jmap-panel .cs-attach-region-input,
+.cs-jmap-panel .cs-attach-region-input:hover,
+.cs-jmap-panel .cs-attach-region-input:focus {
+    height: 36px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: none;
+}
+.cs-jmap-panel .cs-attach-region-input:focus {
+    border-color: rgba(15, 118, 110, 0.55);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+.cs-jmap-panel .cs-attach-tagsave { height: 36px; border-radius: 10px; }
+
+/* The marked-sites list, below the figure/detail row. Same recentering bug
+   as the two rules above, same fix: Anmol, live, on this list specifically:
+   "whenever you are adding more and more joints, you click on that and the
+   model expands." Min-height reserves one row's worth of space even when
+   nothing is marked, so the FIRST site added never changes the modal's
+   height either; past three rows it scrolls in place instead of growing. */
+.cs-jmap-marked {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 56px;
+}
+.cs-chartmodal-body .cs-jmap-marked {
+    max-height: 176px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.cs-jmap-marked-empty {
+    display: flex;
+    align-items: center;
+    height: 56px;
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
 }
 
 /* The chart modal — where the odontogram and the body map go when the doctor
@@ -5497,6 +6053,71 @@ body.cs-locked-shell {
 }
 .cs-addmed-brands { display: flex; flex-direction: column; gap: 5px; }
 
+/* Medicine dispensing billing — MedicineAddSheet's own quantity/price row,
+   opt-in per clinic. Teal, matching this sheet's own accent (see
+   .cs-addmed-input:focus above), never amber/red — an unpriced medicine is
+   a normal state here, not a warning. */
+.cs-addmed-price-hint {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    color: var(--cs-faint);
+    font-size: 12.5px;
+    font-weight: 550;
+}
+.cs-addmed-price-set {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 40px;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 11px;
+    background: rgba(15, 118, 110, 0.06);
+    padding: 0 12px;
+    color: var(--cs-teal);
+    font-size: 12.5px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.cs-addmed-price-set:hover { border-color: rgba(15, 118, 110, 0.45); }
+.cs-addmed-price-set.is-unset { color: var(--cs-faint); background: rgba(248, 250, 252, 0.9); border-color: rgba(0, 0, 0, 0.1); }
+.cs-addmed-price-form {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 11px;
+    background: rgba(15, 118, 110, 0.04);
+    padding: 10px;
+}
+.cs-addmed-price-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cs-addmed-price-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.cs-addmed-price-actions button {
+    border: 0;
+    background: none;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-addmed-price-save {
+    border-radius: 8px !important;
+    background: var(--cs-teal) !important;
+    color: #fff !important;
+}
+.cs-addmed-price-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.cs-addmed-price-save:not(:disabled):hover { background: #0d5f58 !important; }
+
 /* The brand list was hard-sliced to 8 in the component, which made the other
    22 of BRAND_CANDIDATES unreachable on the one panel whose job is choosing
    between them. All of them render now; the list scrolls rather than running
@@ -5575,6 +6196,21 @@ body.cs-locked-shell {
     color: #dc2626;
     font-size: 12.5px;
     font-weight: 550;
+}
+
+/* No salt picked yet — an optional free-text note plus a brief, non-blocking
+   reminder. Amber, the same "soft guard" colour used everywhere else in
+   Cortex for something worth noticing but never something worth blocking. */
+.cs-newmed-nocomp { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.cs-newmed-nocomp-warn {
+    margin: 0;
+    padding: 7px 9px;
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 550;
+    line-height: 1.4;
 }
 
 /* The composition-request fallback, same-day follow-up ask. Sits under the
@@ -5793,6 +6429,1012 @@ body.cs-locked-shell {
     color: var(--cs-faint);
 }
 
+/* ── Medicine Inspector — the notes/timing editor for a line already on
+   the plan (and, when staged, a fresh one before it lands there). Same
+   modal family as MedicineAddSheet above — same shell, same teal accent
+   (docs/aren-modal-design.md) — reusing `.cs-addmed-panel/-head/-foot/
+   -circles/-cancel/-confirm` wholesale. `.cs-addmed-inspector` only
+   narrows the width, since this modal has no brand list to scroll. Was
+   its own `.mi-*` pink/purple family (the Patient modal's accent, wrong
+   domain) before Anmol flagged the two medicine modals looking
+   unrelated; the composition/context bands below are the only pieces
+   MedicineAddSheet never needed and so have no class to reuse. */
+.cs-addmed-inspector { width: min(460px, 100%); }
+
+.cs-addmed-compband {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 20px;
+    background: var(--cs-teal-soft);
+    border-bottom: 1px solid rgba(15, 118, 110, 0.12);
+    color: var(--cs-teal);
+    font-size: 11px;
+}
+.cs-addmed-compband-label {
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+    color: var(--cs-teal);
+    flex-shrink: 0;
+}
+.cs-addmed-compband-value {
+    color: #1e293b;
+    font-weight: 600;
+    font-size: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-addmed-ctxband {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 20px;
+    background: rgba(248, 250, 252, 0.8);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    color: #64748b;
+    font-size: 11px;
+}
+.cs-addmed-ctx-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+.cs-addmed-ctx-label {
+    font-size: 10px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    flex-shrink: 0;
+}
+.cs-addmed-ctx-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.cs-addmed-ctx-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.08);
+    color: var(--cs-teal);
+    font-size: 11px;
+    font-weight: 600;
+}
+.cs-addmed-ctx-sep {
+    width: 1px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.08);
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.cs-addmed-textarea {
+    height: auto;
+    padding: 8px 12px;
+    resize: vertical;
+    min-height: 58px;
+    line-height: 1.5;
+}
+
+/* Intervention Inspector's own width narrowing — no brand list to scroll,
+   unlike MedicineAddSheet. */
+.cs-addmed-inspector { width: min(460px, 100%); }
+
+/* The Site field's dropdown — InterventionInspector.tsx. Anmol, live: "he's
+   not going to invent a new body part name by himself... show them the
+   result, like simple dropdown search." Same list/result shape as the Goals
+   search (`.cs-goalx-results`) and the medicine brand list, teal instead of
+   either of their accents. */
+.cs-addmed-sitewrap { position: relative; }
+.cs-addmed-siteresults {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 210px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 11px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(16, 28, 46, 0.12);
+}
+.cs-addmed-siteresult {
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-addmed-siteresult:hover { background: var(--cs-teal-soft); color: var(--cs-teal); }
+
+/* ── ANATOMY PICKER — AnatomyPicker.tsx. The shared "where on the patient"
+   control inside the assessment and intervention modals. The figure reuses
+   the body map's own `.cs-body*` drawing; only the chosen zone differs:
+   solid teal (the doctor's own statement, colour.md) instead of the joint
+   map's blue, so a site chosen here reads as the same colour as the modal
+   it sits in. Known sites stay the joint map's teal-soft. */
+.cs-anat-figure { margin-bottom: 0; }
+.cs-anat-figure .cs-body-svg { max-width: 180px; }
+.cs-anat-figure .cs-body-orient { text-align: center; font-size: 11px; line-height: 1.35; }
+/* The accent follows the modal it sits in: teal by default (interventions),
+   violet inside the assessment modal. Two variables, set on the modal. */
+.cs-addmed {
+    --anat-accent: var(--cs-teal);
+    --anat-accent-soft: var(--cs-teal-soft);
+    --anat-accent-ring: rgba(15, 118, 110, 0.12);
+}
+.cs-anat-figure .cs-body-zone.is-sel {
+    fill: var(--anat-accent, var(--cs-teal));
+    stroke: var(--anat-accent, var(--cs-teal));
+}
+/* A zone this assessment cannot sit on ("Knee osteoarthritis" off the
+   knee) fades back, so the few that can are the ones that read as body. */
+.cs-body-zone.is-off {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+.cs-body-zone.is-off:hover { fill: #f4f7fc; stroke: #cbd5e6; }
+
+.cs-anat-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+.cs-anat-search { position: relative; }
+/* A class of its own, never a bare input: base.css styles `input` unlayered
+   (transparent border, 31px) and wins over any utility. */
+.cs-anat-input {
+    width: 100%;
+    height: 40px;
+    box-sizing: border-box;
+    border: 1px solid #c3cad6;
+    border-radius: 11px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cs-anat-input::placeholder { color: var(--cs-faint); font-weight: 500; }
+.cs-anat-input:focus {
+    outline: none;
+    border-color: var(--anat-accent, var(--cs-teal));
+    box-shadow: 0 0 0 3px var(--anat-accent-ring, rgba(15, 118, 110, 0.12));
+}
+.cs-anat-results {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 230px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 11px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(16, 28, 46, 0.12);
+}
+.cs-anat-result {
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-anat-result.is-active { background: var(--anat-accent-soft, var(--cs-teal-soft)); color: var(--anat-accent, var(--cs-teal)); }
+
+/* The chosen site: same 40px as the input it replaces, so choosing one
+   never moves anything below it. */
+.cs-anat-selected {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, var(--anat-accent, var(--cs-teal)) 35%, transparent);
+    border-radius: 11px;
+    background: var(--anat-accent-soft, var(--cs-teal-soft));
+    padding: 0 6px 0 12px;
+    color: var(--anat-accent, var(--cs-teal));
+    font-size: 13.5px;
+    font-weight: 700;
+}
+.cs-anat-selected > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-anat-selected > button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+}
+.cs-anat-selected > button:hover { background: var(--anat-accent-ring, rgba(15, 118, 110, 0.12)); }
+
+.cs-anat-known {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.cs-anat-known > span {
+    margin-right: 2px;
+    color: var(--cs-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+/* Two or more known places and none chosen: the question leads. */
+.cs-anat-known.is-ask > span { color: var(--anat-accent, var(--cs-teal)); }
+.cs-anat-known.is-ask { margin-bottom: 2px; }
+
+.cs-anat-knownchip {
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cs-anat-knownchip:hover:not(:disabled) { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-anat-knownchip.is-on {
+    border-color: var(--cs-teal);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+
+/* The command bar's own input. base.css styles every bare `input` unlayered
+   (a fill, a border on hover, a blue ring on focus), which beat the bar's
+   utilities and drew a second box inside the bar's own focus ring. The bar
+   is the field; its input is only the caret. */
+.cx-bar-input,
+.cx-bar-input:hover,
+.cx-bar-input:focus {
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+}
+
+/* ── "Where?" on a local finding's chip — CaseSheet.tsx FindingSitePrompt.
+   The OnsetPrompt popover's shape, the anatomy picker's controls. Portalled
+   to <body> and placed from the chip's rect, so no card crops it. */
+.cx-site-pop {
+    position: fixed;
+    z-index: 1200;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px;
+    box-shadow: 0 12px 28px rgba(16, 28, 46, 0.16);
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+    text-align: left;
+    cursor: default;
+}
+.cx-site-pop-head {
+    margin: 0 0 8px;
+    padding: 0 2px;
+    color: var(--cs-teal);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cx-site-pop-head > span {
+    color: var(--cs-faint);
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.cx-site-pop-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.cx-site-pop-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cx-site-pop-chip:hover { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cx-site-pop-chip.is-on {
+    border-color: var(--cs-teal);
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+.cx-site-pop-chip:focus-visible,
+.cx-site-pop-done:focus-visible,
+.cx-site-pop-clear:focus-visible {
+    outline: 2px solid var(--cs-teal);
+    outline-offset: 2px;
+}
+.cs-anat-input.cx-site-pop-input { height: 34px; border-radius: 9px; font-size: 12.5px; }
+.cx-site-pop .cs-anat-result { padding: 7px 10px; font-size: 12.5px; }
+.cx-site-pop-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+}
+.cx-site-pop-clear,
+.cx-site-pop-done {
+    height: 28px;
+    border: 0;
+    border-radius: 7px;
+    padding: 0 11px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cx-site-pop-clear { background: none; color: var(--cs-faint); }
+.cx-site-pop-clear:hover { background: rgba(0, 0, 0, 0.05); color: var(--cs-ink); }
+.cx-site-pop-done { background: var(--cs-teal); color: #fff; }
+.cx-site-pop-done:hover { filter: brightness(1.06); }
+
+/* Figure beside the fields inside a modal; stacked on narrow screens. */
+.cs-addmed-anat { width: min(640px, 100%); max-height: min(92vh, 760px); }
+.cs-anat-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cs-anat-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+@media (max-width: 640px) {
+    .cs-anat-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── ASSESSMENT SITE MODAL — AssessmentSiteModal.tsx. The shared shell in
+   the Assessment card's violet, the same way `.cs-goal-modal` re-accents
+   it rose. */
+.cs-dx-modal {
+    --anat-accent: var(--cs-violet);
+    --anat-accent-soft: var(--cs-violet-soft);
+    --anat-accent-ink: #4c1d95;
+    --anat-accent-ring: rgba(124, 58, 237, 0.14);
+}
+.cs-dx-modal-stripe { background: linear-gradient(90deg, #a78bfa 0%, #7c3aed 50%, #5b21b6 100%); }
+.cs-dx-modal-eyebrow { color: var(--cs-violet); }
+.cs-dx-modal-confirm {
+    background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%) !important;
+    box-shadow: 0 4px 14px rgba(124, 58, 237, 0.3) !important;
+}
+.cs-dx-modal .cs-addmed-head .cs-glyph { background: linear-gradient(135deg, #ede9fe 0%, #f5f0ff 100%); }
+.cs-dx-modal .cs-addmed-x:hover { background: rgba(124, 58, 237, 0.12) !important; border-color: rgba(124, 58, 237, 0.3) !important; color: var(--cs-violet) !important; }
+
+.cs-addmed-label em {
+    margin-left: 4px;
+    color: var(--cs-faint);
+    font-style: normal;
+    font-weight: 550;
+    letter-spacing: 0.02em;
+    text-transform: none;
+}
+
+.cs-dx-adddetails {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    height: 34px;
+    border: 1px dashed color-mix(in srgb, var(--anat-accent) 45%, transparent);
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--anat-accent);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.cs-dx-adddetails:hover { background: var(--anat-accent-soft); }
+
+.cs-dx-details { gap: 12px; }
+.cs-dx-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: normal;
+}
+/* Field labels: small, uppercase, letter-spaced — and INK, not grey:
+   nothing a doctor must read should look disabled. The chosen value below
+   stays the dominant thing. */
+.cs-dx-fieldlabel {
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 750;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-dx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-dx-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.cs-dx-chip:hover { border-color: var(--anat-accent); color: var(--anat-accent); }
+.cs-dx-chip.is-on {
+    border-color: var(--anat-accent);
+    background: var(--anat-accent);
+    color: #fff;
+}
+.cs-dx-chip.is-flag { align-self: flex-start; }
+.cs-dx-chip.is-flag.is-on { background: var(--anat-accent-soft); color: var(--anat-accent); }
+.cs-dx-inputrow { display: flex; align-items: center; gap: 8px; text-transform: none; }
+.cs-dx-inputrow .cs-anat-input.is-num { width: 96px; font-variant-numeric: tabular-nums; }
+.cs-dx-inputrow em { color: var(--cs-muted); font-size: 12.5px; font-style: normal; font-weight: 600; }
+
+/* ── On the Assessment card (ConditionsCard.tsx) ───────────────────────
+   The marker on an assessment that will ask where on the body. Quiet: a
+   hint about what the next click does, not a status. */
+.cs-dx-sitemark {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    border-radius: 5px;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+
+/* A confirmed assessment's sites, one pill each, under its name. Click a
+   pill to change it; × takes that site alone off. */
+.cs-dx-sites {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-top: 5px;
+}
+.cs-dx-site {
+    display: inline-flex;
+    align-items: stretch;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #b6e6cd;
+    border-radius: 7px;
+    background: #fff;
+}
+.cs-dx-site > button {
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+.cs-dx-site > button:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 3px 4px 3px 7px;
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+}
+.cs-dx-site > button:first-child svg { flex: none; color: #15803d; }
+.cs-dx-site > button:first-child:hover { color: var(--cs-violet); }
+.cs-dx-site-x {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    color: var(--cs-faint);
+}
+.cs-dx-site-x:hover { background: #fee2e2; color: #dc2626; }
+
+.cs-dx-addsite {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    padding: 0 6px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-dx-addsite:hover { background: var(--cs-blue-soft); }
+
+.cs-dx-editname {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: #4c1d95;
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-dx-editname:hover { text-decoration: underline; }
+
+.cs-dx-fieldlabel em {
+    margin-left: 3px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 550;
+}
+.cs-dx-chip.is-multi.is-on { background: var(--anat-accent-soft); color: var(--anat-accent); }
+
+/* ── INTERVENTION MODAL extras — InterventionInspector.tsx ─────────────
+   What a removal points back at: this patient's earlier casts, sutures,
+   dressings, one row each, picked like a radio. */
+.cs-intv-earlier { display: flex; flex-direction: column; gap: 5px; }
+.cs-intv-earlier-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 6px 10px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+}
+.cs-intv-earlier-row:hover { border-color: var(--anat-accent); }
+.cs-intv-earlier-row.is-on {
+    border-color: var(--anat-accent);
+    background: var(--anat-accent-soft);
+}
+.cs-intv-earlier-mark {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border: 1.5px solid var(--cs-line-strong);
+    border-radius: 50%;
+    color: #fff;
+}
+.cs-intv-earlier-row.is-on .cs-intv-earlier-mark { border-color: var(--anat-accent); background: var(--anat-accent); }
+.cs-intv-earlier-text { flex: 1; min-width: 0; line-height: 1.3; }
+.cs-intv-earlier-row em {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 600;
+}
+
+/* Performed today / Planned — a two-way segmented control, then "due in
+   N days|weeks" when planned. */
+.cs-intv-when { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cs-intv-seg {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #f5f7fa;
+    padding: 2px;
+}
+.cs-intv-seg button {
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 0 12px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.cs-intv-seg button.is-on {
+    background: #fff;
+    color: var(--anat-accent);
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.12);
+}
+.cs-intv-seg button:disabled { cursor: not-allowed; opacity: 0.45; }
+.cs-intv-seg.is-small button { height: 26px; padding: 0 9px; font-size: 12px; }
+.cs-intv-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.cs-intv-due .cs-anat-input.is-num { width: 58px; height: 32px; text-align: center; font-variant-numeric: tabular-nums; }
+.cs-dx-preview b em { color: var(--cs-muted); font-style: normal; font-weight: 600; }
+
+/* "Next" follow-ons under an intervention on the plan rail (followOns.ts).
+   Blue — the action colour — and quiet: a suggestion to take or ignore,
+   never a task. */
+.cs-followons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+}
+.cs-followons > span {
+    margin-right: 2px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.cs-followon {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 22px;
+    border: 1px dashed color-mix(in srgb, var(--cs-blue) 40%, transparent);
+    border-radius: 6px;
+    background: #fff;
+    padding: 0 7px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+.cs-followon:hover { border-style: solid; background: var(--cs-blue-soft); }
+
+/* "For Fracture — Left forearm": the assessment at this site, which the
+   intervention is linked to. */
+.cs-intv-for {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.cs-intv-for svg { color: var(--anat-accent); }
+
+/* "DETAILS" over "Optional" — both readable, the heading stronger. */
+.cs-dx-sechead {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    color: #1e293b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.cs-dx-sechead em {
+    color: #475569;
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 550;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+/* ── Joined segmented control — [ Closed | Open ]. One object with
+   segments, not loose buttons; the chosen segment is filled. */
+.cs-seg {
+    display: inline-flex;
+    align-self: flex-start;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #c3cad6;
+    border-radius: 10px;
+    background: #fff;
+}
+.cs-seg > button {
+    min-width: 0;
+    height: 34px;
+    border: 0;
+    border-left: 1px solid #dde2ea;
+    background: none;
+    padding: 0 14px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.cs-seg > button:first-child { border-left: 0; }
+.cs-seg > button:hover:not(:disabled):not(.is-on) { background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-seg > button.is-on {
+    background: var(--anat-accent, var(--cs-teal));
+    color: #fff;
+    font-weight: 700;
+}
+.cs-seg > button.is-on + button { border-left-color: transparent; }
+.cs-seg > button:disabled { cursor: not-allowed; opacity: 0.45; }
+.cs-seg > button:focus-visible { outline: 2px solid var(--anat-accent, var(--cs-teal)); outline-offset: -2px; }
+
+/* ── Dropdown — [ Select pattern ▾ ] and a clean list. */
+.cs-dsel { position: relative; align-self: stretch; }
+.cs-dsel-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    max-width: 320px;
+    height: 36px;
+    border: 1px solid #c3cad6;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 10px 0 12px;
+    color: var(--cs-faint);
+    font-size: 13px;
+    font-weight: 550;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-dsel-btn.has-value { color: var(--cs-ink); font-weight: 650; }
+.cs-dsel-btn svg { flex: none; color: var(--cs-muted); transition: transform 0.15s; }
+.cs-dsel-btn.is-open { border-color: var(--anat-accent, var(--cs-teal)); box-shadow: 0 0 0 3px var(--anat-accent-ring, rgba(15, 118, 110, 0.12)); }
+.cs-dsel-btn.is-open svg { transform: rotate(180deg); }
+.cs-dsel-list {
+    position: absolute;
+    z-index: 6;
+    top: calc(100% + 4px);
+    left: 0;
+    width: min(320px, 100%);
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 11px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 10px 28px rgba(16, 28, 46, 0.14);
+}
+.cs-dsel-opt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 8px 10px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-dsel-opt.is-active { background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-dsel-opt.is-on { color: var(--anat-accent, var(--cs-teal)); font-weight: 700; }
+.cs-dsel-opt.is-clear { color: var(--cs-muted); font-size: 12px; }
+
+/* ── Yes/no and "several at once" — a checkbox, not a chip. */
+.cs-dx-check {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 8px;
+    min-height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 2px 4px 2px 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cs-dx-check.is-chip {
+    border: 1px solid #c3cad6;
+    border-radius: 999px;
+    padding: 0 12px 0 8px;
+}
+.cs-dx-check.is-chip.is-on { border-color: var(--anat-accent, var(--cs-teal)); background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-dx-checkbox {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border: 1.5px solid #94a3b8;
+    border-radius: 4px;
+    background: #fff;
+    color: #fff;
+}
+.cs-dx-check.is-on .cs-dx-checkbox { border-color: var(--anat-accent, var(--cs-teal)); background: var(--anat-accent, var(--cs-teal)); }
+
+/* Section labels in the site modals read as ink, like the field labels —
+   greyed-out headings looked disabled. */
+.cs-addmed-anat .cs-addmed-label { color: #334155; font-weight: 750; }
+
+/* ── Site, sized to what is known (AnatomyPicker.tsx's SiteLayout). */
+.cs-anat-single { display: flex; flex-direction: column; gap: 16px; }
+.cs-addmed-anat.is-compact { width: min(520px, 100%); }
+.cs-anat-showmap {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 5px;
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    color: var(--cs-blue);
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cs-anat-showmap:hover { text-decoration: underline; }
+.cs-body-svg.is-zoomed { max-width: 170px; max-height: 360px; }
+
+/* The joint is known: "Knee" over [ Left | Right | Both ], beside a small
+   line-art joint that only decorates. */
+.cs-joint {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border: 1px solid var(--cs-line);
+    border-radius: 14px;
+    background:
+        radial-gradient(120% 90% at 0% 0%, var(--anat-accent-soft, var(--cs-teal-soft)), transparent 60%),
+        #fff;
+    padding: 12px 14px;
+}
+.cs-joint-art {
+    width: 52px;
+    height: 52px;
+    flex: none;
+    stroke: var(--anat-accent, var(--cs-teal));
+    opacity: 0.85;
+}
+.cs-joint-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cs-joint-name {
+    color: var(--cs-ink);
+    font-size: 15px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+}
+
+/* ── EXERCISE SHEET — ExerciseSheet.tsx. −/+ steppers that also take
+   typing: a dose is small whole numbers, nudged far more often than typed. */
+.cs-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+}
+.cs-step > button {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 34px;
+    border: 1px solid #c3cad6;
+    background: #fff;
+    color: var(--cs-ink);
+    cursor: pointer;
+}
+.cs-step > button:first-child { border-radius: 10px 0 0 10px; border-right: 0; }
+.cs-step > button:nth-of-type(2) { border-radius: 0 10px 10px 0; border-left: 0; }
+.cs-step > button:hover:not(:disabled) { background: var(--anat-accent-soft, var(--cs-teal-soft)); }
+.cs-step > button:disabled { color: #cbd5e1; cursor: default; }
+.cs-step > input {
+    width: 48px;
+    height: 34px;
+    box-sizing: border-box;
+    border: 1px solid #c3cad6;
+    border-radius: 0;
+    background: #fff;
+    padding: 0 4px;
+    color: var(--cs-ink);
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+.cs-step > input:focus { outline: none; border-color: var(--anat-accent, var(--cs-teal)); box-shadow: 0 0 0 3px var(--anat-accent-ring, rgba(15, 118, 110, 0.12)); position: relative; z-index: 1; }
+.cs-step > em { margin-left: 8px; color: var(--cs-muted); font-size: 12.5px; font-style: normal; font-weight: 600; }
+.cs-ex-doserow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cs-ex-times { color: var(--cs-muted); font-size: 15px; font-weight: 700; }
+.cs-ex-moregrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.cs-ex-sheet .cs-addmed-body { gap: 16px; }
+
+/* A prescribed exercise's name opens its sheet. */
+.cs-ex-label.is-edit {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-ex-label.is-edit:hover { color: var(--cs-teal); text-decoration: underline; }
+
+/* The exact line that will print, live, above the buttons. */
+.cs-dx-preview {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    background: var(--anat-accent-soft);
+    padding: 10px 20px;
+}
+.cs-dx-preview span {
+    flex: none;
+    color: var(--anat-accent);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-dx-preview b {
+    min-width: 0;
+    color: var(--anat-accent-ink, #134e4a);
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
 /* The overflow row on a capped Attachments card. Deliberately quiet: it is a
    way to the rest of the files, not a file itself. */
 .cs-attach-more {
@@ -5973,6 +7615,71 @@ body.cs-locked-shell {
     font-size: 11px;
     font-weight: 500;
 }
+
+/* The custom-measurement fallback's "nothing matches -> create it" affordance
+   — see MeasurementSearch's own doc comment. `.cs-meas-custom-open` sits
+   inside the same pill-row `.cs-meas-menu-group` the catalogue matches use,
+   so it reads as one more option in the list rather than a separate control. */
+.cs-meas-custom-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-teal);
+    border-color: rgba(15, 118, 110, 0.35) !important;
+}
+.cs-meas-custom-open:hover {
+    border-color: rgba(15, 118, 110, 0.6) !important;
+    background: rgba(15, 118, 110, 0.06);
+}
+
+.cs-meas-custom-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 11px;
+    background: rgba(15, 118, 110, 0.04);
+    padding: 10px;
+    margin-top: 2px;
+}
+.cs-meas-custom-form .cs-meas-menu-head {
+    margin: 0;
+    color: var(--cs-teal);
+    font-weight: 600;
+}
+.cs-meas-custom-row {
+    display: flex;
+    gap: 7px;
+}
+.cs-meas-custom-row input {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.cs-meas-custom-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.cs-meas-custom-actions button {
+    border: 0;
+    background: none;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-meas-custom-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 8px !important;
+    background: var(--cs-teal) !important;
+    color: #fff !important;
+}
+.cs-meas-custom-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.cs-meas-custom-save:not(:disabled):hover { background: #0d5f58 !important; }
 
 /* Plain informational text, not a control — the "N of M shown on the main
    card" line that used to live in the card-foot button that opened this
@@ -6782,14 +8489,14 @@ body.cs-locked-shell {
     flex-direction: column;
     border-bottom: 1px solid var(--cs-line);
     background: var(--cs-card);
-    padding: var(--cs-s2) var(--cs-s5) 0;
+    padding: 10px 20px 12px;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.02);
 }
 
-/* Collapsed: the header line and nothing else. The component stops rendering
-   the row beneath it, so there is no second layout here to keep in sync —
-   only the bottom padding closes up. */
+/* Collapsed: the header line and nothing else. */
 .cs-lt.is-collapsed {
-    padding-bottom: 0;
+    padding: 8px 20px;
 }
 
 /* The collapse, animated. Grid-rows 0fr -> 1fr is the one technique that
@@ -6819,59 +8526,101 @@ body.cs-locked-shell {
 .cs-lt-head {
     display: flex;
     align-items: center;
-    gap: var(--cs-s3);
-    padding-bottom: var(--cs-s2);
+    gap: 12px;
+    padding-bottom: 4px;
+}
+
+.cs-lt.is-collapsed .cs-lt-head {
+    padding-bottom: 0;
 }
 
 .cs-lt-head-spacer { flex: 1; }
 
-/* The collapse control. Looks like the plain title it replaces — no border,
-   no fill — so collapsing this band reads as a light toggle, not a button
-   competing with "Care plan" for attention on the same row. */
+/* The collapse control */
 .cs-lt-collapse {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
     border: none;
     background: none;
-    padding: 0;
+    padding: 2px 6px;
+    margin-left: -6px;
+    border-radius: 7px;
     cursor: pointer;
     color: inherit;
+    transition: background-color 140ms ease;
+}
+
+.cs-lt-collapse:hover {
+    background: rgba(18, 104, 232, 0.05);
+}
+
+.cs-lt-collapse-chevron-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: rgba(18, 104, 232, 0.06);
+    color: var(--cs-blue);
+    transition: background-color 140ms ease;
+}
+
+.cs-lt-collapse:hover .cs-lt-collapse-chevron-wrap {
+    background: rgba(18, 104, 232, 0.14);
 }
 
 .cs-lt-collapse svg {
-    color: var(--cs-faint);
-    transition: transform 140ms ease;
+    transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cs-lt-collapse svg.is-open { transform: rotate(180deg); }
 
-.cs-lt-collapse:hover .cs-lt-title { color: var(--cs-blue); }
+.cs-lt-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cs-lt-title-icon {
+    color: var(--cs-blue);
+    opacity: 0.9;
+}
 
 .cs-lt-title {
     margin: 0;
     color: var(--cs-ink);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 800;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
-.cs-lt-sub {
+.cs-lt-collapse:hover .cs-lt-title { color: var(--cs-blue); }
+
+.cs-lt-badge-visits {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    background: rgba(65, 80, 107, 0.06);
+    border: 1px solid rgba(65, 80, 107, 0.12);
+    padding: 2px 9px;
     color: var(--cs-faint);
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
 }
 
-/* The long-absence flag. Amber because it is a caution about how to READ the
-   numbers beside it, not a finding of its own. */
+/* The long-absence flag */
 .cs-lt-gap {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     border-radius: 999px;
     background: var(--cs-amber-soft);
-    padding: 3px 9px;
+    border: 1px solid rgba(180, 83, 9, 0.2);
+    padding: 2px 9px;
     color: var(--cs-amber);
     font-size: 11px;
     font-weight: 700;
@@ -6881,13 +8630,16 @@ body.cs-locked-shell {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    border: 1px solid var(--cs-line-strong);
+    border: 1px solid rgba(18, 104, 232, 0.25);
     border-radius: 999px;
     background: #fff;
-    padding: 4px 11px;
+    padding: 3px 12px;
     color: var(--cs-blue);
     font-size: 11px;
     font-weight: 700;
+    box-shadow: 0 1px 2px rgba(18, 104, 232, 0.08);
+    transition: all 0.14s ease;
+    cursor: pointer;
 }
 
 .cs-lt-plan-start:hover {
@@ -6903,12 +8655,13 @@ body.cs-locked-shell {
    strip sideways, not silently grow it into the second row this whole pass
    exists to remove. The tiles stay evenly sized because they all share one
    flex basis. */
+/* ── Cards Row ────────────────────────────────────────────────────────── */
 .cs-lt-row {
     display: flex;
     flex-wrap: nowrap;
     align-items: stretch;
-    gap: var(--cs-s2);
-    padding-bottom: var(--cs-s2);
+    gap: 12px;
+    padding: 10px 0 6px;
     overflow-x: auto;
     scrollbar-width: thin;
 }
@@ -6917,19 +8670,17 @@ body.cs-locked-shell {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
-    gap: 1px;
-    min-width: 132px;
-    max-width: 220px;
-    border: 1px solid var(--cs-line);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-page);
-    padding: 6px 9px 5px;
+    min-width: 175px;
+    max-width: 280px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: var(--cs-radius);
+    background: #ffffff;
+    padding: 12px 14px 11px;
+    box-shadow: 0 1px 3px rgba(16, 28, 46, 0.04), 0 1px 2px rgba(16, 28, 46, 0.02);
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
 }
 
-/* The loading skeleton — LongitudinalSkeleton, message-3 follow-up,
-   2026-08-25. Same shell (`.cs-lt`, `.cs-lt-head`, `.cs-lt-row`,
-   `.cs-lt-card`) as the real band, so its footprint is what actually
-   reserves the space; only the content inside becomes shimmer bars. */
+/* Loading skeleton */
 .cs-lt-card.is-skel { gap: 7px; justify-content: center; }
 .cs-lt-skel-bar {
     display: block;
@@ -6958,23 +8709,18 @@ body.cs-locked-shell {
     .cs-lt-skel-bar, .cs-lt-skel-block { animation: none; }
 }
 
-/* Clickable, 2026-08-17 — this is a <button> now, not a <div>, when a saved
-   visit exists behind it (`TrendCard`'s `visit` prop). Reset the button
-   defaults back to matching its non-clickable sibling exactly, then add just
-   enough affordance that "this opens something" reads without shouting over
-   the numbers, which are still the point of the card. */
 .cs-lt-card-open {
     align-items: stretch;
     text-align: left;
     font: inherit;
     color: inherit;
     cursor: pointer;
-    transition: border-color 0.13s ease, box-shadow 0.13s ease;
 }
 
 .cs-lt-card-open:hover {
     border-color: var(--cs-blue);
-    box-shadow: 0 0 0 1px var(--cs-blue-soft);
+    box-shadow: 0 3px 10px rgba(18, 104, 232, 0.10);
+    transform: translateY(-1px);
 }
 
 .cs-lt-card-open:focus-visible {
@@ -6983,36 +8729,86 @@ body.cs-locked-shell {
     box-shadow: 0 0 0 3px var(--cs-blue-soft);
 }
 
+/* ── Trend Cards ──────────────────────────────────────────────────────── */
+.cs-lt-card.is-trend {
+    min-width: 165px;
+    max-width: 230px;
+}
+
+.cs-lt-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
 .cs-lt-card-label {
     margin: 0;
-    color: var(--cs-muted);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
 }
 
 .cs-lt-card-unit {
     color: var(--cs-faint);
     font-weight: 600;
+    font-size: 10.5px;
 }
 
-/* The two numbers ARE the answer, so they carry the weight on this card and
-   everything else on it is annotation. */
+.cs-lt-verdict-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border-radius: 999px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.cs-lt-card.is-improving .cs-lt-verdict-badge {
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+    border: 1px solid rgba(15, 118, 110, 0.2);
+}
+
+.cs-lt-card.is-worsening .cs-lt-verdict-badge {
+    background: var(--cs-amber-soft);
+    color: var(--cs-amber);
+    border: 1px solid rgba(180, 83, 9, 0.2);
+}
+
+.cs-lt-card.is-steady .cs-lt-verdict-badge,
+.cs-lt-card.is-neutral .cs-lt-verdict-badge {
+    background: rgba(65, 80, 107, 0.07);
+    color: var(--cs-muted);
+    border: 1px solid rgba(65, 80, 107, 0.15);
+}
+
+.cs-lt-card-metric-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
 .cs-lt-card-values {
     display: flex;
     align-items: baseline;
     gap: 5px;
     margin: 0;
     color: var(--cs-ink);
-    font-size: 15.5px;
-    font-weight: 750;
+    font-size: 16px;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
 }
 
 .cs-lt-from {
     color: var(--cs-faint);
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 650;
 }
 
@@ -7022,62 +8818,56 @@ body.cs-locked-shell {
     color: var(--cs-faint);
 }
 
-.cs-lt-card-delta {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin: 0;
-    font-size: 11px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
+.cs-lt-now {
+    color: var(--cs-ink);
 }
 
-.cs-lt-verdict {
-    color: var(--cs-faint);
-    font-weight: 600;
+.cs-lt-card-delta-badge {
+    font-size: 11px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
 }
 
 .cs-lt-spark {
     display: block;
-    margin: 2px 0 0;
+    margin: 4px 0 2px;
     width: 100%;
-    height: 18px;
+    height: 22px;
     overflow: visible;
 }
 
 .cs-lt-card-foot {
-    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0 0;
     color: var(--cs-faint);
-    font-size: 10.5px;
-    font-weight: 550;
+    font-size: 10px;
+    font-weight: 600;
 }
 
-/* ── The verdict colours ──────────────────────────────────────────────── */
-.cs-lt-card.is-improving .cs-lt-card-delta { color: var(--cs-teal); }
+/* Trend verdict colors */
+.cs-lt-card.is-improving .cs-lt-card-delta-badge { color: var(--cs-teal); }
 .cs-lt-card.is-improving .cs-lt-spark path { stroke: var(--cs-teal); }
 .cs-lt-card.is-improving .cs-lt-spark circle { fill: var(--cs-teal); }
 
-.cs-lt-card.is-worsening .cs-lt-card-delta { color: var(--cs-amber); }
+.cs-lt-card.is-worsening .cs-lt-card-delta-badge { color: var(--cs-amber); }
 .cs-lt-card.is-worsening .cs-lt-spark path { stroke: var(--cs-amber); }
 .cs-lt-card.is-worsening .cs-lt-spark circle { fill: var(--cs-amber); }
 
-/* Steady and neutral share a treatment on purpose: neither is a verdict, and
-   giving "no opinion" its own colour would make it look like one. */
-.cs-lt-card.is-steady .cs-lt-card-delta,
-.cs-lt-card.is-neutral .cs-lt-card-delta { color: var(--cs-muted); }
+.cs-lt-card.is-steady .cs-lt-card-delta-badge,
+.cs-lt-card.is-neutral .cs-lt-card-delta-badge { color: var(--cs-muted); }
 .cs-lt-card.is-steady .cs-lt-spark path,
 .cs-lt-card.is-neutral .cs-lt-spark path { stroke: var(--cs-muted); }
 .cs-lt-card.is-steady .cs-lt-spark circle,
 .cs-lt-card.is-neutral .cs-lt-spark circle { fill: var(--cs-muted); }
 
-/* ── Care plan ────────────────────────────────────────────────────────── */
-/* Violet, the plan colour everywhere else on this screen — a care plan is the
-   consultation plan's long form, and reading as the same family is the point. */
+/* ── Care Plan Card ───────────────────────────────────────────────────── */
 .cs-lt-card.is-plan {
-    flex: 1 1 210px;
-    max-width: 280px;
-    border-color: color-mix(in srgb, var(--cs-violet) 22%, var(--cs-line));
-    background: var(--cs-violet-soft);
+    flex: 1 1 230px;
+    max-width: 290px;
+    border-color: rgba(124, 58, 237, 0.22);
+    background: linear-gradient(180deg, #ffffff 0%, var(--cs-violet-soft) 100%);
 }
 
 .cs-lt-plan-head {
@@ -7085,6 +8875,21 @@ body.cs-locked-shell {
     align-items: center;
     justify-content: space-between;
     gap: var(--cs-s2);
+}
+
+.cs-lt-plan-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--cs-violet);
+}
+
+.cs-lt-plan-icon {
+    color: var(--cs-violet);
 }
 
 .cs-lt-plan-edit {
@@ -7095,29 +8900,44 @@ body.cs-locked-shell {
     background: none;
     padding: 0;
     color: var(--cs-violet);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
+    cursor: pointer;
 }
 
 .cs-lt-plan-edit:hover { text-decoration: underline; }
 
 .cs-lt-plan-goal {
-    margin: 1px 0 0;
+    margin: 4px 0 0;
     color: var(--cs-ink);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 750;
     line-height: 1.25;
 }
 
+.cs-lt-plan-dx-wrap {
+    margin: 2px 0 0;
+}
+
 .cs-lt-plan-dx {
-    margin: 0;
+    display: inline-block;
     color: var(--cs-faint);
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 550;
 }
 
+.cs-lt-plan-progress-section {
+    margin-top: 6px;
+}
+
+.cs-lt-plan-pos-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
 .cs-lt-plan-pos {
-    margin: 4px 0 0;
+    margin: 0;
     color: var(--cs-muted);
     font-size: 11px;
     font-weight: 600;
@@ -7126,6 +8946,12 @@ body.cs-locked-shell {
 .cs-lt-plan-pos strong {
     color: var(--cs-violet);
     font-weight: 800;
+}
+
+.cs-lt-plan-pct {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--cs-violet);
 }
 
 .cs-lt-plan-open { color: var(--cs-faint); font-weight: 550; }
@@ -7145,92 +8971,258 @@ body.cs-locked-shell {
     height: 100%;
 }
 
-/* ── Last visit ───────────────────────────────────────────────────────── */
-.cs-lt-card.is-last {
-    flex: 1 1 200px;
-    max-width: 260px;
+.cs-lt-plan-foot {
+    color: var(--cs-violet);
+    opacity: 0.85;
 }
 
-.cs-lt-last-list {
+/* ── Last Visit Card ──────────────────────────────────────────────────── */
+.cs-lt-card.is-last {
+    flex: 1 1 340px;
+    min-width: 290px;
+    max-width: 440px;
+    background: #ffffff;
+    border-color: rgba(226, 232, 240, 0.95);
+}
+
+.cs-lt-last-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 9px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid rgba(241, 245, 249, 1);
+}
+
+.cs-lt-last-title-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.cs-lt-last-icon-box {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(18, 104, 232, 0.08);
+    color: var(--cs-blue);
+}
+
+.cs-lt-last-title {
+    font-size: 13.5px;
+    font-weight: 750;
+    color: var(--cs-ink);
+}
+
+.cs-lt-date-badge {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--cs-ink);
+    background: rgba(241, 245, 249, 0.95);
+    padding: 2.5px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(226, 232, 240, 0.85);
+}
+
+.cs-lt-last-body {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin: 3px 0 0;
+    gap: 7px;
+    margin-bottom: 10px;
 }
 
-.cs-lt-last-list > div {
+.cs-lt-last-row {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
 }
 
-.cs-lt-last-list dt {
-    flex: 0 0 62px;
+.cs-lt-last-field-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
     color: var(--cs-faint);
-    font-size: 10.5px;
-    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
-.cs-lt-last-list dd {
-    margin: 0;
-    overflow: hidden;
-    color: var(--cs-ink);
+.cs-lt-chips-wrap {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 5px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+.cs-lt-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 5px;
     font-size: 11px;
     font-weight: 600;
-    text-overflow: ellipsis;
+    line-height: 1.25;
     white-space: nowrap;
 }
 
-.cs-lt-last-open {
+.cs-lt-chip-symptom {
+    background: rgba(225, 29, 72, 0.06);
+    color: #be123c;
+    border: 1px solid rgba(225, 29, 72, 0.14);
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-lt-chip-rx {
+    background: rgba(15, 118, 110, 0.07);
+    color: #0f766e;
+    border: 1px solid rgba(15, 118, 110, 0.16);
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-lt-chip-more {
+    background: rgba(65, 80, 107, 0.08);
+    color: var(--cs-faint);
+    font-weight: 700;
+    font-size: 10px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.cs-lt-chip-empty {
+    background: rgba(241, 245, 249, 0.8);
+    color: var(--cs-faint);
+    font-style: italic;
+    border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.cs-lt-doc-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cs-ink);
+}
+
+.cs-lt-last-open-btn {
     margin-top: auto;
-    border: 0;
-    background: none;
-    padding: 4px 0 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgba(18, 104, 232, 0.18);
+    border-radius: 6px;
+    background: rgba(18, 104, 232, 0.04);
+    padding: 5px 9px;
     color: var(--cs-blue);
     font-size: 11px;
     font-weight: 700;
-    text-align: left;
+    cursor: pointer;
+    transition: all 0.14s ease;
 }
 
-.cs-lt-last-open:hover { text-decoration: underline; }
+.cs-lt-last-open-btn:hover {
+    background: var(--cs-blue);
+    color: #ffffff;
+    border-color: var(--cs-blue);
+    box-shadow: 0 2px 6px rgba(18, 104, 232, 0.25);
+}
 
-.cs-lt-none {
-    align-self: center;
-    margin: 0;
+/* ── Empty Trend Placeholder Card ─────────────────────────────────────── */
+.cs-lt-card.is-empty-trend {
+    flex: 1 1 230px;
+    max-width: 300px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    border: 1px dashed var(--cs-line-strong);
+    background: rgba(248, 250, 252, 0.7);
+    padding: 14px 16px;
+}
+
+.cs-lt-empty-trend-icon {
+    flex: 0 0 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(65, 80, 107, 0.08);
     color: var(--cs-faint);
-    font-size: 11px;
-    font-weight: 550;
 }
 
-/* ── The expand ───────────────────────────────────────────────────────── */
+.cs-lt-empty-trend-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-lt-empty-trend-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 750;
+    color: var(--cs-ink);
+}
+
+.cs-lt-empty-trend-desc {
+    margin: 3px 0 0;
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: var(--cs-faint);
+}
+
+/* ── The timeline expand button & timeline list ───────────────────────── */
 .cs-lt-expand {
     align-self: center;
+    margin: 6px auto 0;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    border: 0;
-    background: none;
-    padding: 2px 8px;
+    gap: 6px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 999px;
+    background: #ffffff;
+    padding: 4px 14px;
     color: var(--cs-faint);
     font-size: 11px;
     font-weight: 650;
+    box-shadow: 0 1px 2px rgba(16, 28, 46, 0.04);
+    cursor: pointer;
+    transition: all 0.14s ease;
 }
 
-.cs-lt-expand:hover { color: var(--cs-blue); }
-.cs-lt-expand svg { transition: transform 140ms ease; }
-.cs-lt-expand svg.is-open { transform: rotate(180deg); }
+.cs-lt-expand:hover {
+    color: var(--cs-blue);
+    border-color: rgba(18, 104, 232, 0.3);
+    background: var(--cs-blue-soft);
+}
 
-/* The timeline caps its own height and scrolls INSIDE the band. Letting it
-   grow would push the workspace down by however many visits a patient
-   happens to have had, which for the physiotherapy courses this is built for
-   is exactly the patients where it would be worst. */
+.cs-lt-expand svg {
+    transition: transform 140ms ease;
+}
+
+.cs-lt-expand svg.is-open {
+    transform: rotate(180deg);
+}
+
 .cs-lt-timeline {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    margin: 0;
-    border-top: 1px solid var(--cs-line);
-    padding: var(--cs-s2) 0 0;
+    gap: 3px;
+    margin: 8px 0 0;
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    padding: 8px 0 0;
     max-height: 168px;
     overflow-y: auto;
     list-style: none;
@@ -7238,20 +9230,28 @@ body.cs-locked-shell {
 
 .cs-lt-timeline button {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--cs-s3);
-    border: 0;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
     background: none;
-    padding: 5px 8px;
+    padding: 6px 10px;
     width: 100%;
     text-align: left;
+    transition: all 0.12s ease;
+    cursor: pointer;
 }
 
-.cs-lt-timeline button:hover { background: var(--cs-blue-soft); }
+.cs-lt-timeline button:hover {
+    background: var(--cs-blue-soft);
+    border-color: rgba(18, 104, 232, 0.12);
+}
 
 .cs-lt-tl-date {
-    flex: 0 0 78px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 85px;
     color: var(--cs-ink);
     font-size: 11px;
     font-weight: 700;
@@ -7261,6 +9261,7 @@ body.cs-locked-shell {
     flex: 0 0 auto;
     border-radius: 999px;
     background: color-mix(in srgb, var(--cs-violet) 12%, #fff);
+    border: 1px solid color-mix(in srgb, var(--cs-violet) 20%, transparent);
     padding: 1px 7px;
     color: var(--cs-violet);
     font-size: 10.5px;
@@ -7278,10 +9279,24 @@ body.cs-locked-shell {
 }
 
 .cs-lt-tl-doc {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex: 0 0 auto;
     color: var(--cs-faint);
     font-size: 10.5px;
     font-weight: 550;
+}
+
+.cs-lt-tl-arrow {
+    color: var(--cs-faint);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.cs-lt-timeline button:hover .cs-lt-tl-arrow {
+    opacity: 1;
+    color: var(--cs-blue);
 }
 
 /* ── Care plan sheet ──────────────────────────────────────────────────────
@@ -7702,7 +9717,10 @@ body.cs-locked-shell {
 }
 
 .cs-ex-grouphead {
-    margin: 0 0 4px;
+    /* Lined up with the rows' own 8px inset — it sat 8px left of the
+       exercise names, which is what read as cramped and crooked. */
+    margin: 2px 0 4px;
+    padding: 0 8px;
     color: var(--cs-muted);
     font-size: 10.5px;
     font-weight: 700;
@@ -7723,8 +9741,9 @@ body.cs-locked-shell {
     gap: var(--cs-s2);
     border: 1px solid transparent;
     border-radius: 10px;
-    padding: 6px 8px;
+    padding: 8px 8px;
 }
+.cs-ex-row.cs-ex-offer { align-items: center; }
 
 .cs-ex-row.is-on {
     border-color: color-mix(in srgb, var(--cs-teal) 22%, var(--cs-line));
@@ -7985,47 +10004,29 @@ body.cs-locked-shell {
 
 .cs-ex-dropped span { font-weight: 550; }
 
-.cs-ex-empty {
-    margin: var(--cs-s3) 0;
-    color: var(--cs-faint);
-    font-size: 11.5px;
-    font-weight: 550;
-    text-align: center;
-}
-
 /* ════════════════════════════════════════════════════════════
    GOALS — patient-authored, re-scored per visit.
    Rewritten 2026-08-20 alongside Story: same search field, same
    confirmation chip, because two adjacent cards must not teach
-   two different ways to add a fact. The per-goal 0-10 slider
-   this block used to style now lives in `.cs-goal-pop`, one
-   click behind the chip — see `GoalsCard.tsx` for why the score
-   moved rather than went away.
+   two different ways to add a fact. Rewritten again 2026-09-23:
+   the score picker is a real modal now (`.cs-addmed-*`'s shape,
+   rose as the accent — colour.md's own meaning for rose is
+   "reported (by the patient)"), and this card's every other
+   accent — search focus ring, result hover, chip press — is
+   threaded to the same rose rather than defaulting to blue, per
+   colour.md's "thread the tone through" rule.
    ════════════════════════════════════════════════════════════ */
 
-.cs-goals-body {
+/* Title and search on one row; one slim chip row below. */
+.cs-goals-top {
     display: flex;
-    flex-direction: column;
-    gap: var(--cs-s2);
-    padding: var(--cs-s2) var(--cs-s3) var(--cs-s3);
-}
-
-/* `+ Goal` — the card's own action, pushed to the far end of the head. */
-.cs-goal-headbtn {
-    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    border: 0;
-    border-radius: 6px;
-    background: var(--cs-blue);
-    padding: 4px 10px;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 650;
+    gap: 12px;
+    padding: 12px 14px 0;
 }
+.cs-goals-title { flex: none; }
+.cs-goals-top .cs-goalx-searchwrap { flex: 1; min-width: 0; }
 
-.cs-goal-headbtn:hover { background: #0f5ccd; }
 
 /* ── Goals' own search + chip vocabulary ───────────────────────────────
    These rules were `.cs-story-*` until 2026-08-20 — Goals was built beside
@@ -8051,8 +10052,8 @@ body.cs-locked-shell {
 }
 
 .cs-goalx-search:focus-within {
-    border-color: rgba(18, 104, 232, 0.5);
-    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.1);
+    border-color: rgba(225, 29, 72, 0.5);
+    box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.1);
 }
 
 .cs-goalx-search input {
@@ -8100,7 +10101,7 @@ body.cs-locked-shell {
     cursor: pointer;
 }
 
-.cs-goalx-result.is-active { background: var(--cs-blue-soft); }
+.cs-goalx-result.is-active { background: var(--cs-rose-soft); }
 
 .cs-goalx-result-label {
     flex: 1;
@@ -8116,27 +10117,63 @@ body.cs-locked-shell {
 .cs-goalx-result-dim {
     flex: none;
     border-radius: 5px;
-    background: var(--cs-blue-soft);
+    background: var(--cs-rose-soft);
     padding: 2px 7px;
-    color: var(--cs-blue);
+    color: var(--cs-rose);
     font-size: 11px;
     font-weight: 650;
 }
 
+/* Reserved height for one row, always — Anmol, live: "there will be already
+   a little bit of reserved white space for at least one row of pills to be
+   there." Empty is a rendered state (a hint line), not the absence of this
+   row, so the card never ends abruptly right after the search box. */
 .cs-goalx-chips {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
+    min-height: 28px;
+    padding: 10px 14px 12px;
 }
 
+.cs-goalx-empty {
+    margin: 0;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 550;
+}
+
+/* One line per goal: icon · activity · score. Small on purpose. */
 .cs-goalx-chip {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
+    height: 28px;
+    max-width: 100%;
     border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
+    border-radius: 7px;
     background: #fff;
-    padding: 5px 10px;
+    padding: 0 9px;
+}
+
+.cs-goalx-chip b {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-goalx-chip em {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
 .cs-goalx-chip-tick {
@@ -8144,72 +10181,40 @@ body.cs-locked-shell {
     color: var(--cs-green);
 }
 
-.cs-goalx-chip-text {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.15;
-}
-
-.cs-goalx-chip-text b {
-    color: var(--cs-ink);
-    font-size: 12.5px;
-    font-weight: 650;
-}
-
-.cs-goalx-chip-text em {
-    color: var(--cs-label);
-    font-size: 10.5px;
-    font-style: normal;
-    font-weight: 600;
-}
-
-.cs-goalx-more {
+/* "+N more" — Anmol: "I don't think someone have like 14 goals. If more than
+   that, then a simple show more option." A button, not a dashed box: the old
+   "Add another goal" trailing action this replaces just refocused the
+   search field already visible above, which the search box being ALWAYS on
+   screen in this card makes redundant — see PlanCard's own removal of an
+   analogous "+ Add" for the same reason. */
+.cs-goalx-showmore {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    border: 1px dashed var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
+    gap: 4px;
+    border: 0;
     background: none;
-    padding: 5px 10px;
-    color: var(--cs-faint);
+    padding: 5px 6px;
+    color: var(--cs-rose);
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 650;
     cursor: pointer;
 }
 
-.cs-goalx-more:hover { border-color: var(--cs-blue); color: var(--cs-blue); }
-
-/* A goal chip is pressable — the score sits behind it. Positioned so the
-   picker can anchor to it. */
-.cs-goal-chipwrap { position: relative; }
+.cs-goalx-showmore:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .cs-goalx-chip.is-press {
     cursor: pointer;
     transition: border-color 0.13s ease, background 0.13s ease;
 }
 
-.cs-goalx-chip.is-press:hover,
-.cs-goalx-chip.is-press.is-open {
-    border-color: var(--cs-blue);
-    background: var(--cs-blue-soft);
+.cs-goalx-chip.is-press:hover {
+    border-color: var(--cs-rose);
+    background: var(--cs-rose-soft);
 }
 
 .cs-goalx-chip-aim {
     flex: none;
     color: var(--cs-label);
-}
-
-.cs-goal-pop {
-    position: absolute;
-    top: calc(100% + 5px);
-    left: 0;
-    z-index: 30;
-    width: 268px;
-    border: 1px solid var(--cs-line-strong);
-    border-radius: var(--cs-radius-sm);
-    background: var(--cs-card);
-    padding: var(--cs-s2);
-    box-shadow: 0 10px 26px -8px rgba(11, 23, 51, 0.26);
 }
 
 .cs-goal-pop-q {
@@ -8252,10 +10257,10 @@ body.cs-locked-shell {
 }
 
 .cs-goal-tick:last-child { border-right: 0; }
-.cs-goal-tick:hover { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-goal-tick:hover { background: var(--cs-rose-soft); color: var(--cs-rose); }
 
 .cs-goal-tick.is-on {
-    background: var(--cs-blue);
+    background: var(--cs-rose);
     color: #fff;
 }
 
@@ -8269,23 +10274,17 @@ body.cs-locked-shell {
     font-weight: 550;
 }
 
-.cs-goal-pop-actions {
-    display: inline-flex;
-    gap: 4px;
-    margin-left: auto;
+/* The Goal modal — `.cs-addmed-*`'s shape, rose overrides on top of it
+   (colour.md: rose means "reported (by the patient)"). Narrower than the
+   medicine sheet — no brand list, just the scale. */
+.cs-goal-modal { width: min(400px, 100%); }
+.cs-goal-modal-stripe { background: linear-gradient(90deg, #fb7185 0%, #e11d48 50%, #9f1239 100%); }
+.cs-goal-modal-eyebrow { color: var(--cs-rose); }
+.cs-goal-modal-confirm {
+    background: linear-gradient(135deg, #fb7185 0%, #e11d48 100%) !important;
+    box-shadow: 0 4px 14px rgba(225, 29, 72, 0.3) !important;
 }
-
-.cs-goal-pop-actions button {
-    border: 0;
-    border-radius: 5px;
-    background: var(--cs-page);
-    padding: 3px 7px;
-    color: var(--cs-muted);
-    font-size: 10.5px;
-    font-weight: 650;
-}
-
-.cs-goal-pop-actions button:hover { background: var(--cs-line); color: var(--cs-ink); }
+.cs-goal-modal .cs-addmed-x:hover { background: rgba(225, 29, 72, 0.12) !important; border-color: rgba(225, 29, 72, 0.3) !important; color: var(--cs-rose) !important; }
 
 /* ════════════════════════════════════════════════════════════
    EXAMINATION — Phase 3, plus Phase 5's within-session re-test.
@@ -8293,6 +10292,177 @@ body.cs-locked-shell {
    can; the only genuinely new control is the 0-5 strength segment,
    which is an ordinal grade and therefore picked, never typed.
    ════════════════════════════════════════════════════════════ */
+
+/* The per-joint examination block, and its section rhythm. Each section is
+   separated by a hairline and opens with a heading that reads as a heading
+   — larger, darker, with a teal tick (colour.md: teal = "examined") — so
+   "Range of motion" and "Strength" can never be mistaken for another data
+   row like "Extension" or "Quadriceps", which they previously matched. */
+.cs-exam {
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+    border-top: 1px solid var(--cs-line);
+}
+.cs-exam-sec {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--cs-line);
+}
+.cs-exam-sec:last-of-type { border-bottom: 0; }
+.cs-exam-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+.cs-exam-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 750;
+    letter-spacing: -0.005em;
+    text-transform: none;
+}
+.cs-exam-h::before {
+    content: "";
+    flex: none;
+    width: 3px;
+    height: 15px;
+    border-radius: 2px;
+    background: var(--cs-teal);
+}
+.cs-exam-h small {
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 550;
+}
+
+/* The number box. A class rather than utilities because base.css styles the
+   bare `input` element (transparent border, 31px height) as unlayered CSS,
+   which beats layered Tailwind utilities regardless of specificity — the
+   reason these boxes were invisible no matter which border utility they
+   carried. A class selector beats the element selector outright. */
+.cs-exam-num {
+    width: 100%;
+    height: 32px;
+    border: 1px solid #c3cad6;
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 6px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    box-shadow: inset 0 1px 2px rgba(16, 28, 46, 0.05);
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.cs-exam-num::-webkit-outer-spin-button,
+.cs-exam-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cs-exam-num::placeholder { color: #aeb5c2; font-weight: 500; }
+.cs-exam-num:hover { border-color: #a5aebd; }
+.cs-exam-num:focus {
+    outline: none;
+    border-color: var(--cs-blue);
+    box-shadow: 0 0 0 3px rgba(18, 104, 232, 0.13);
+}
+.cs-exam-num:disabled { background: var(--cs-page); cursor: default; }
+.cs-exam-num.is-hint { border-color: #dcbd8c; background: #fffcf4; }
+.cs-exam-num.is-retest { border-color: rgba(15, 118, 110, 0.45); }
+.cs-exam-num.is-retest:focus { border-color: var(--cs-teal); box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13); }
+
+/* Range of motion. ONE grid template shared by the header, every movement
+   row and every re-test row, and every column but the label is a fixed
+   width — so no cell's content can push another column sideways. */
+.cs-rom {
+    overflow: hidden;
+    border: 1px solid var(--cs-line);
+    border-radius: 10px;
+}
+.cs-rom-group + .cs-rom-group { border-top: 1px solid var(--cs-line); }
+.cs-rom-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) 72px 72px 56px 76px;
+    align-items: center;
+    gap: 8px;
+    min-height: 46px;
+    padding: 7px 12px;
+}
+.cs-rom-row.is-head {
+    min-height: 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--cs-line);
+    background: var(--cs-page);
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.cs-rom-row.is-head span:not(:first-child) { text-align: center; }
+.cs-rom-row.is-retest {
+    border-top: 1px dashed rgba(15, 118, 110, 0.28);
+    background: var(--cs-teal-soft);
+}
+.cs-rom-label {
+    min-width: 0;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 650;
+}
+.cs-rom-label i {
+    margin-left: 6px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 550;
+}
+.cs-rom-label.is-sub {
+    padding-left: 12px;
+    color: var(--cs-teal);
+    font-size: 12px;
+    font-weight: 650;
+}
+.cs-rom-gap {
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+.cs-rom-gap em { color: var(--cs-faint); font-style: normal; font-weight: 500; }
+.cs-rom-gap.is-up { color: var(--cs-teal); }
+.cs-rom-gap.is-down { color: var(--cs-amber); }
+.cs-rom-retest {
+    justify-self: end;
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 0 10px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    transition: border-color 0.12s ease, color 0.12s ease;
+}
+.cs-rom-retest:hover:not(:disabled) { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-rom-undo {
+    justify-self: end;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--cs-faint);
+}
+.cs-rom-undo:hover { background: rgba(15, 118, 110, 0.1); color: var(--cs-teal); }
 
 .cs-exam-card .cs-card-head {
     display: flex;
@@ -8551,3 +10721,1328 @@ body.cs-locked-shell {
     color: var(--cs-amber);
     font-weight: 700;
 }
+
+/* ── ONGOING CARE (2026-09-25) — LongitudinalBand.tsx / ongoing.ts ────────
+   Three kinds, three hues the consult already uses for them: teal for what
+   is on the patient (in place), amber for what is due (rose once overdue),
+   violet for the assessment it is all for. */
+.cs-lt-ongoing {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 460px;
+    border: 1px solid rgba(15, 118, 110, 0.22);
+    border-radius: 999px;
+    background: var(--cs-teal-soft);
+    padding: 2px 10px 2px 9px;
+    color: #0b6a62;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.cs-lt-ongoing:hover { border-color: currentColor; box-shadow: 0 1px 3px rgba(16, 28, 46, 0.08); }
+.cs-lt-ongoing > svg { flex: none; }
+.cs-lt-ongoing-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-lt-ongoing-status { flex: none; font-weight: 600; opacity: 0.8; white-space: nowrap; }
+.cs-lt-ongoing-status::before { content: "·"; margin-right: 6px; }
+.cs-lt-ongoing-more {
+    flex: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.75);
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 800;
+}
+.cs-lt-ongoing.is-due { border-color: rgba(180, 83, 9, 0.22); background: var(--cs-amber-soft); color: var(--cs-amber); }
+.cs-lt-ongoing.is-urgent { border-color: rgba(190, 18, 60, 0.25); background: #fff1f2; color: #be123c; }
+.cs-lt-ongoing.is-condition { border-color: rgba(109, 40, 217, 0.2); background: #f5f3ff; color: #6d28d9; }
+
+.cs-lt-card.is-ongoing {
+    flex: 1 1 320px;
+    min-width: 270px;
+    max-width: 400px;
+}
+.cs-lt-last-icon-box.cs-lt-ongoing-icon { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-lt-og-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.cs-lt-og-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 6px 7px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+.cs-lt-og-item:hover { background: #f5f8fc; }
+.cs-lt-og-item:focus-visible { outline: 2px solid var(--cs-blue); outline-offset: 1px; }
+.cs-lt-og-mark {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: 6px;
+    background: var(--cs-teal-soft);
+    color: var(--cs-teal);
+}
+.cs-lt-og-item.is-due .cs-lt-og-mark { background: var(--cs-amber-soft); color: var(--cs-amber); }
+.cs-lt-og-item.is-urgent .cs-lt-og-mark { background: #fff1f2; color: #be123c; }
+.cs-lt-og-item.is-condition .cs-lt-og-mark { background: #f5f3ff; color: #6d28d9; }
+.cs-lt-og-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cs-lt-og-title {
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-og-site { color: var(--cs-muted); font-weight: 600; }
+.cs-lt-og-status { color: var(--cs-teal); font-size: 11px; font-weight: 650; }
+.cs-lt-og-item.is-due .cs-lt-og-status { color: var(--cs-amber); }
+.cs-lt-og-item.is-urgent .cs-lt-og-status { color: #be123c; }
+.cs-lt-og-item.is-condition .cs-lt-og-status { color: var(--cs-faint); font-weight: 600; }
+.cs-lt-og-more { margin: 6px 7px 0; color: var(--cs-faint); font-size: 11px; font-weight: 600; }
+
+.cs-lt-chip-dx {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid rgba(109, 40, 217, 0.16);
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Ongoing Care rows carry one control each — Remove / Status / Plan. */
+.cs-lt-og-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cs-lt-og-row > .cs-lt-og-item { flex: 1; min-width: 0; }
+.cs-lt-og-act {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    height: 26px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 7px;
+    background: #fff;
+    padding: 0 9px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.cs-lt-og-act:hover,
+.cs-lt-og-act[aria-expanded="true"] {
+    border-color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+}
+.cs-lt-og-act:focus-visible { outline: 2px solid var(--cs-blue); outline-offset: 1px; }
+/* Changed this visit: settled, still changeable. */
+.cs-lt-og-row.is-today .cs-lt-og-status { color: var(--cs-blue); font-weight: 650; }
+
+.cs-lt-menu {
+    position: fixed;
+    z-index: 1300;
+    width: 220px;
+    box-sizing: border-box;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 12px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 14px 34px rgba(16, 28, 46, 0.18);
+    outline: none;
+}
+.cs-lt-menu-head {
+    margin: 0;
+    overflow: hidden;
+    padding: 7px 9px 5px;
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.cs-lt-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 7px 9px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 560;
+    text-align: left;
+    cursor: pointer;
+}
+.cs-lt-menu-item.is-active { background: var(--cs-blue-soft); }
+.cs-lt-menu-item.is-on { color: var(--cs-blue); font-weight: 650; }
+.cs-lt-menu-item.is-danger { color: #be123c; }
+.cs-lt-menu-check { display: grid; flex: none; place-items: center; width: 14px; color: var(--cs-blue); }
+
+/* ── THE BAND, NOW vs THEN (2026-09-26) ───────────────────────────────────
+   Two kinds of card, told apart before a word is read:
+     Ongoing care  the NOW — teal-tinted surface, a live accent edge, an
+                   "Active now" eyebrow with a pulse
+     Last visit    the THEN — plain white, a grey history eyebrow and the
+                   date, a record rather than a state
+   And the band itself turns into a Follow-up when the patient is back with
+   a thread still open. */
+
+.cs-lt-card.is-ongoing {
+    position: relative;
+    flex: 1 1 340px;
+    max-width: 480px;
+    overflow: hidden;
+    border-color: rgba(15, 118, 110, 0.28);
+    background: linear-gradient(180deg, #effaf6 0%, #f7fcfa 42%, #ffffff 100%);
+    padding-left: 17px;
+    box-shadow: 0 1px 3px rgba(15, 118, 110, 0.08), 0 1px 2px rgba(16, 28, 46, 0.03);
+}
+.cs-lt-card.is-ongoing::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: linear-gradient(180deg, #14b8a6 0%, var(--cs-teal) 100%);
+}
+.cs-lt-og-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    row-gap: 1px;
+    margin-bottom: 8px;
+}
+.cs-lt-og-eyebrow {
+    display: inline-flex;
+    grid-column: 1;
+    align-items: center;
+    gap: 6px;
+    color: var(--cs-teal);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-lt-og-live {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #14b8a6;
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45);
+    animation: cs-lt-live 2.2s ease-out infinite;
+}
+@keyframes cs-lt-live {
+    0% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45); }
+    70% { box-shadow: 0 0 0 6px rgba(20, 184, 166, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .cs-lt-og-live { animation: none; } }
+.cs-lt-og-heading {
+    grid-column: 1;
+    color: var(--cs-ink);
+    font-size: 14px;
+    font-weight: 750;
+}
+.cs-lt-og-count {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: grid;
+    place-items: center;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--cs-teal);
+    padding: 0 7px;
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 800;
+}
+.cs-lt-card.is-ongoing .cs-lt-og-item:hover { background: rgba(15, 118, 110, 0.06); }
+.cs-lt-og-item.is-awaiting .cs-lt-og-mark { background: #eff6ff; color: #2563eb; }
+.cs-lt-og-item.is-awaiting .cs-lt-og-status { color: #1d4ed8; }
+.cs-lt-og-act.is-primary {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+.cs-lt-og-act.is-primary:hover { background: #1d4ed8; color: #fff; }
+
+/* Last visit — the record. */
+.cs-lt-card.is-last {
+    flex: 1 1 340px;
+    max-width: 520px;
+    gap: 0;
+}
+.cs-lt-lv-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.cs-lt-lv-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-lt-lv-when {
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+.cs-lt-lv-headline {
+    margin: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 15.5px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-lv-context {
+    margin: 2px 0 0;
+    color: var(--cs-muted);
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.4;
+}
+.cs-lt-lv-found {
+    margin: 5px 0 0;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.4;
+}
+.cs-lt-lv-found > span {
+    margin-right: 4px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-lt-lv-outcomes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 9px 0 0;
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    padding: 7px 0 0;
+    list-style: none;
+}
+.cs-lt-lv-outcomes > li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 3px 0;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.cs-lt-lv-outcomes > li > svg { flex: none; color: var(--cs-faint); }
+.cs-lt-lv-otext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-lt-lv-outcomes em {
+    flex: none;
+    border-radius: 999px;
+    padding: 1px 8px;
+    background: rgba(65, 80, 107, 0.07);
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 750;
+}
+.cs-lt-lv-outcomes > li.is-awaited > svg { color: #2563eb; }
+.cs-lt-lv-outcomes > li.is-awaited em { background: #fffbeb; color: #b45309; }
+.cs-lt-lv-outcomes > li.is-result > svg { color: #2563eb; }
+.cs-lt-lv-outcomes > li.is-result em,
+.cs-lt-lv-outcomes > li.is-done em { background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-lt-lv-outcomes > li.is-done > svg { color: var(--cs-teal); }
+.cs-lt-lv-outcomes > li.is-planned > svg,
+.cs-lt-lv-outcomes > li.is-planned em { color: #b45309; }
+.cs-lt-lv-outcomes > li.is-planned em { background: #fffbeb; }
+.cs-lt-lv-outcomes > li.is-rx > svg,
+.cs-lt-lv-outcomes > li.is-exercise > svg { color: #0f766e; }
+.cs-lt-lv-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 9px;
+}
+.cs-lt-lv-doc {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+.cs-lt-lv-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    padding: 4px 7px;
+    color: var(--cs-blue);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-lt-lv-open:hover { background: var(--cs-blue-soft); }
+
+/* Follow-up: the band says "this is the same story continuing".
+   Violet, the palette's colour for history (the carried-forward chips wear
+   it), so "a thread from before" reads the same everywhere. Two states:
+   an open thread (dashed, waiting for Continue) and a joined one, where the
+   tint deepens a step and the accent runs the full height, so the doctor
+   can see at a glance that today is already carrying it. */
+.cs-lt.is-followup {
+    --fu-ink: #5b21b6;
+    --fu-accent: #7c3aed;
+    border-color: rgba(124, 58, 237, 0.2);
+    background:
+        linear-gradient(90deg, rgba(245, 240, 255, 0.95) 0%, rgba(250, 247, 255, 0.7) 26%, #ffffff 52%);
+    box-shadow: inset 3px 0 0 rgba(124, 58, 237, 0.55);
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+.cs-lt.is-followup.is-continued {
+    background:
+        linear-gradient(90deg, rgba(237, 229, 255, 0.95) 0%, rgba(245, 240, 255, 0.75) 30%, #ffffff 58%);
+    box-shadow: inset 4px 0 0 var(--fu-accent);
+}
+.cs-lt.is-followup .cs-lt-head { cursor: pointer; }
+.cs-lt.is-followup .cs-lt-title { color: var(--fu-ink); }
+.cs-lt.is-followup .cs-lt-collapse:hover { background: rgba(124, 58, 237, 0.06); }
+.cs-lt.is-followup .cs-lt-collapse:hover .cs-lt-title { color: var(--fu-accent); }
+.cs-lt.is-followup .cs-lt-collapse-chevron-wrap { background: rgba(124, 58, 237, 0.09); color: var(--fu-accent); }
+.cs-lt.is-followup .cs-lt-collapse:hover .cs-lt-collapse-chevron-wrap { background: rgba(124, 58, 237, 0.16); }
+
+/* Inside a follow-up, what is still open wears the thread's colour too, so
+   the band reads as one story rather than a violet header over a teal card. */
+.cs-lt.is-followup .cs-lt-card.is-ongoing {
+    border-color: rgba(124, 58, 237, 0.24);
+    background: linear-gradient(180deg, #f6f1ff 0%, #fbf9ff 42%, #ffffff 100%);
+    box-shadow: 0 1px 3px rgba(91, 33, 182, 0.08), 0 1px 2px rgba(16, 28, 46, 0.03);
+}
+.cs-lt.is-followup .cs-lt-card.is-ongoing::before { background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%); }
+.cs-lt.is-followup .cs-lt-og-eyebrow { color: #6d28d9; }
+.cs-lt.is-followup .cs-lt-og-live { background: #8b5cf6; animation-name: cs-lt-live-violet; }
+@keyframes cs-lt-live-violet {
+    0% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.45); }
+    70% { box-shadow: 0 0 0 6px rgba(139, 92, 246, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+}
+.cs-lt.is-followup .cs-lt-og-count { background: #7c3aed; }
+.cs-lt.is-followup .cs-lt-card.is-ongoing .cs-lt-og-item:hover { background: rgba(124, 58, 237, 0.06); }
+.cs-lt.is-followup .cs-lt-ongoing:not(.is-due):not(.is-urgent) {
+    border-color: rgba(124, 58, 237, 0.22);
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+
+/* The follow-up mark (FollowUpMark in LongitudinalBand.tsx). */
+.cs-lt-fu-mark {
+    display: inline-grid;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(160deg, #8b5cf6 0%, #6d28d9 100%);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(109, 40, 217, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transition: background 0.3s ease;
+}
+.cs-lt-fu-mark.is-joined { background: linear-gradient(160deg, #7c3aed 0%, #5b21b6 100%); }
+.cs-lt-fu-mark svg { animation: cs-token-in 0.28s cubic-bezier(0.34, 1.4, 0.64, 1); }
+
+/* The episode trail (EpisodeTrail): a line of dots in the header. */
+.cs-lt-fu-trail { display: inline-flex; flex: none; align-self: center; }
+.cs-lt-fu-trail svg { display: block; overflow: visible; }
+.cs-lt-fu-trail-dash { stroke: #c4b5fd; stroke-width: 1.5; stroke-dasharray: 2 3; stroke-linecap: round; }
+.cs-lt-fu-trail-line {
+    stroke: #8b5cf6;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 0.6s cubic-bezier(0.65, 0, 0.35, 1);
+}
+.cs-lt-fu-trail.is-joined .cs-lt-fu-trail-line { stroke-dashoffset: 0; }
+.cs-lt-fu-trail-dot { fill: #a78bfa; }
+.cs-lt-fu-trail-today { fill: #fff; stroke: #7c3aed; stroke-width: 1.8; transition: fill 0.25s ease 0.45s; }
+.cs-lt-fu-trail.is-joined .cs-lt-fu-trail-today { fill: #7c3aed; }
+@media (prefers-reduced-motion: reduce) {
+    .cs-lt-fu-trail-line, .cs-lt-fu-trail-today { transition: none; }
+}
+
+.cs-lt-fu-episode {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+.cs-lt-fu-name {
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 13.5px;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-fu-from {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cs-lt-fu-carried {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    align-self: center;
+    border-radius: 999px;
+    background: rgba(124, 58, 237, 0.1);
+    padding: 2px 8px 2px 6px;
+    color: var(--fu-ink, #5b21b6);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    animation: cs-lt-fu-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both 0.12s;
+}
+@keyframes cs-lt-fu-in {
+    from { opacity: 0; transform: translateX(-4px) scale(0.96); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Continue folds away once pressed: its width goes back to the header
+   (a 1fr/0fr grid column, the band's own fold technique) as it fades. */
+.cs-lt-fu-cwrap {
+    display: inline-grid;
+    flex: none;
+    grid-template-columns: 1fr;
+    transition: grid-template-columns 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease, margin 0.26s ease;
+}
+.cs-lt-fu-cwrap > .cs-lt-fu-continue { min-width: 0; overflow: hidden; }
+.cs-lt-fu-cwrap.is-gone {
+    grid-template-columns: 0fr;
+    margin-left: -12px;
+    opacity: 0;
+    pointer-events: none;
+}
+.cs-lt-fu-continue {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid #6d28d9;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%);
+    padding: 3px 12px;
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    transition: background 0.14s ease, transform 0.12s ease;
+}
+.cs-lt-fu-continue:hover { background: linear-gradient(180deg, #6d28d9 0%, #5b21b6 100%); }
+.cs-lt-fu-continue:active { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-lt-fu-cwrap { transition: none; }
+    .cs-lt-fu-carried { animation: none; }
+}
+
+/* Header priorities: the title and the episode never wrap or clip; the
+   ongoing pill is what gives way, truncating its status first. */
+.cs-lt-collapse,
+.cs-lt-plan-start,
+.cs-lt-fu-continue,
+.cs-lt-badge-visits { flex: none; white-space: nowrap; }
+.cs-lt-title { white-space: nowrap; }
+.cs-lt-fu-episode { flex: 0 1 auto; min-width: 0; }
+.cs-lt-fu-name { min-width: 0; }
+.cs-lt-ongoing { flex: 0 1 auto; min-width: 140px; }
+.cs-lt-ongoing-title { flex: 0 1 auto; }
+.cs-lt-ongoing-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cs-lt-ongoing-more { flex: none; }
+
+/* Each card its own height: a single ongoing item is a short card, not a
+   tall one padded with white. */
+.cs-lt-row { align-items: flex-start; }
+/* The episode is what the follow-up is ABOUT: it keeps its width. */
+.cs-lt-fu-episode { flex: 0 0 auto; max-width: 42%; }
+.cs-lt-ongoing { min-width: 110px; }
+
+/* ── NEUROVASCULAR CHECK (2026-09-26) — NeurovascularCheck.tsx ──────────── */
+.cs-nv {
+    margin-top: 12px;
+    border-top: 1px solid var(--cs-line);
+    padding-top: 10px;
+}
+.cs-nv-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.cs-nv-title {
+    color: var(--cs-label);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-nv-flag {
+    border-radius: 999px;
+    background: #fff1f2;
+    padding: 1px 8px;
+    color: #be123c;
+    font-size: 10.5px;
+    font-weight: 750;
+}
+.cs-nv-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    margin-left: auto;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 11px;
+    color: var(--cs-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-nv-all:hover { border-color: var(--cs-teal); color: var(--cs-teal); }
+.cs-nv-all.is-on { border-color: var(--cs-teal); background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-nv-rows { display: flex; flex-direction: column; gap: 6px; }
+.cs-nv-row {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+.cs-nv-label { color: var(--cs-ink); font-size: 12.5px; font-weight: 600; }
+.cs-nv .cs-seg > button { height: 30px; padding: 0 12px; font-size: 12.5px; }
+/* An abnormal answer is said in rose, not the teal of a normal one. */
+.cs-nv-row.is-abnormal .cs-seg > button.is-on { background: #be123c; }
+.cs-nv-row.is-abnormal .cs-nv-label { color: #be123c; }
+/* The control is as wide as its options, never stretched to the column. */
+.cs-nv .cs-seg { justify-self: start; }
+
+/* ── MOTION (2026-09-26) ──────────────────────────────────────────────────
+   Things arrive from where they were asked for and leave faster than they
+   came. `translate` / `scale` (the individual properties), not `transform`,
+   so a popover positioned with a transform keeps its position. */
+@keyframes cs-pop-in {
+    from { opacity: 0; translate: 0 -4px; scale: 0.98; }
+    to { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes cs-panel-in {
+    from { opacity: 0; translate: 0 6px; }
+    to { opacity: 1; translate: 0 0; }
+}
+@keyframes cs-token-in {
+    from { opacity: 0; scale: 0.88; }
+    to { opacity: 1; scale: 1; }
+}
+@keyframes cs-chartmodal-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+@keyframes cs-chartmodal-sink {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(6px) scale(0.985); }
+}
+.cs-jf-list,
+.cx-site-pop,
+.cs-lt-menu,
+.cs-dsel-list {
+    transform-origin: top left;
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* A different site is a different panel: it settles in rather than its
+   contents swapping under the doctor's eye. */
+.cs-jmap-panel { animation: cs-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+.cs-jf-token { animation: cs-token-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1); }
+.cs-chartmodal.is-leaving { pointer-events: none; }
+.cs-chartmodal.is-leaving .cs-chartmodal-scrim { animation: cs-chartmodal-fade-out 150ms ease forwards; }
+.cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: cs-chartmodal-sink 150ms cubic-bezier(0.4, 0, 1, 1) forwards; }
+@media (prefers-reduced-motion: reduce) {
+    .cs-jf-list, .cx-site-pop, .cs-lt-menu, .cs-dsel-list,
+    .cs-jmap-panel, .cs-jf-token,
+    .cs-chartmodal.is-leaving .cs-chartmodal-scrim,
+    .cs-chartmodal.is-leaving .cs-chartmodal-panel { animation: none; }
+}
+
+/* ── ASSESSMENTS ON THE BODY MAP (2026-09-26) — JointFindingField +
+   SiteAssessmentDetails. The Assessment card's violet: a fracture made on
+   the map is the same record as one made on the card, and looks it. */
+.cs-jf-token.is-assessment {
+    gap: 2px;
+    border-color: #d8c8fb;
+    background: linear-gradient(180deg, #fbf8ff 0%, #efe7ff 100%);
+    padding: 0 4px 0 0;
+    color: #5b21b6;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 1.5px rgba(91, 33, 182, 0.12);
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.cs-jf-token.is-assessment.is-open {
+    border-color: #a78bfa;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+.cs-jf-token > button.cs-jf-token-open {
+    display: inline-flex;
+    width: auto;
+    height: auto;
+    align-items: center;
+    gap: 5px;
+    border-radius: 7px 0 0 7px;
+    padding: 3px 4px 3px 8px;
+    color: inherit;
+    font: inherit;
+    opacity: 1;
+}
+.cs-jf-token > button.cs-jf-token-open:hover { background: rgba(124, 58, 237, 0.07); }
+.cs-jf-token-sub {
+    max-width: 220px;
+    overflow: hidden;
+    color: #7c5bc4;
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-jf-token-chev { opacity: 0.55; transition: transform 0.18s ease; }
+.cs-jf-token.is-open .cs-jf-token-chev { transform: rotate(180deg); }
+
+.cs-jf-dx {
+    --anat-accent: var(--cs-violet);
+    --anat-accent-soft: var(--cs-violet-soft);
+    --anat-accent-ring: rgba(124, 58, 237, 0.12);
+    position: relative;
+    margin-top: 10px;
+    border: 1px solid #e3d7fd;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fcfaff 0%, #ffffff 60%);
+    padding: 10px 12px 12px;
+    box-shadow: 0 1px 2px rgba(91, 33, 182, 0.06);
+    animation: cs-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* A notch pointing back at the token it belongs to. */
+.cs-jf-dx::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 22px;
+    width: 10px;
+    height: 10px;
+    border-top: 1px solid #e3d7fd;
+    border-left: 1px solid #e3d7fd;
+    background: #fcfaff;
+    transform: rotate(45deg);
+}
+.cs-jf-dx-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cs-jf-dx-glyph {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border-radius: 7px;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+.cs-jf-dx-title { color: var(--cs-ink); font-size: 13.5px; font-weight: 750; }
+.cs-jf-dx-eyebrow {
+    color: #6d28d9;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-jf-dx-done {
+    margin-left: auto;
+    height: 26px;
+    border: 1px solid #d8c8fb;
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 12px;
+    color: #5b21b6;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-jf-dx-done:hover { background: var(--cs-violet-soft); }
+.cs-jf-dx-fields { display: flex; flex-direction: column; gap: 12px; }
+.cs-jf-dx-none { margin: 0; color: var(--cs-faint); font-size: 12.5px; }
+.cs-jf-dx-preview {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 12px 0 0;
+    border-top: 1px dashed #e3d7fd;
+    padding-top: 9px;
+    font-size: 12.5px;
+}
+.cs-jf-dx-preview span {
+    flex: none;
+    color: #6d28d9;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-jf-dx-preview b { color: var(--cs-ink); font-weight: 650; }
+
+.cs-jf-row.is-assessment .cs-jf-check {
+    border-color: #d8c8fb;
+    background: var(--cs-violet-soft);
+    color: var(--cs-violet);
+}
+.cs-jf-row.is-assessment.is-here .cs-jf-check { border-color: var(--cs-violet); background: var(--cs-violet); color: #fff; }
+.cs-jf-row.is-assessment.is-active { background: #f5f0ff; }
+.cs-jf-listfoot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 0;
+    border-top: 1px solid var(--cs-line);
+    padding: 8px 10px 4px;
+    color: #6d28d9;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+    .cs-jf-dx { animation: none; }
+}
+
+/* ── RESULT SHEET (2026-09-26) — ResultSheet.tsx. Sits on ChartSurface; the
+   assessment pieces reuse the body map's violet tokens and detail editor. */
+.cs-rs { display: flex; flex-direction: column; gap: 16px; padding: 2px 4px 4px; }
+.cs-rs-ordered { margin: -6px 0 0; color: var(--cs-faint); font-size: 12.5px; font-weight: 550; }
+.cs-rs-ordered b { color: var(--cs-ink); font-weight: 700; }
+.cs-rs-sec { display: flex; flex-direction: column; gap: 10px; }
+.cs-rs-sechead { display: flex; align-items: center; gap: 8px; }
+.cs-rs-sechead > span {
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-rs-sechead > em { color: var(--cs-faint); font-size: 11.5px; font-style: normal; font-weight: 550; }
+.cs-rs-normal {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    height: 28px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 999px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-label);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.cs-rs-normal:hover { border-color: #9ccfc6; }
+.cs-rs-normal.is-on { border-color: var(--cs-teal); background: var(--cs-teal-soft); color: var(--cs-teal); }
+.cs-rs-tokens .cs-jf-dx { margin-top: 0; }
+.cs-rs-plain { display: inline-flex; align-items: center; gap: 5px; padding: 3px 4px 3px 8px; }
+.cs-rs-search { display: flex; flex-direction: column; gap: 6px; }
+.cs-rs-hits {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 4px;
+    box-shadow: 0 8px 22px rgba(16, 28, 46, 0.08);
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-rs-none { margin: 0; color: var(--cs-faint); font-size: 12px; }
+.cs-rs-nearby { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cs-rs-nearby > span { color: var(--cs-faint); font-size: 11.5px; font-weight: 600; }
+.cs-rs-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    border: 1px dashed #c4b0f5;
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 10px;
+    color: #5b21b6;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cs-rs-link:hover { background: var(--cs-violet-soft); }
+.cs-rs-files { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cs-rs-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    height: 32px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 9px;
+    background: #fff;
+    padding: 0 10px;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    animation: cs-token-in 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.cs-rs-file.is-done > svg:first-child { color: var(--cs-teal); }
+.cs-rs-file.is-failed { border-color: #f5c2c0; color: var(--cs-red); }
+.cs-rs-file em { color: var(--cs-red); font-size: 11.5px; font-style: normal; }
+.cs-rs-file-name { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-rs-attach {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    border: 1px dashed #b9c3d3;
+    border-radius: 10px;
+    background: #fbfcfe;
+    padding: 0 14px;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease;
+}
+.cs-rs-attach:hover { border-color: var(--cs-blue); background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-rs-attach:disabled { opacity: 0.5; cursor: default; }
+.cs-rs-note,
+.cs-rs-note:hover,
+.cs-rs-note:focus {
+    width: 100%;
+    height: 38px;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: none;
+}
+.cs-rs-note:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); outline: none; }
+/* Stays in reach while the details above it are long. */
+.cs-rs-foot {
+    position: sticky;
+    bottom: -18px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 2px -4px -22px;
+    border-top: 1px solid var(--cs-line);
+    background: linear-gradient(180deg, rgba(246, 248, 252, 0.94) 0%, #f6f8fc 100%);
+    padding: 12px 4px 18px;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+.cs-rs-preview { display: flex; flex: 1; min-width: 0; align-items: baseline; gap: 8px; margin: 0; font-size: 12.5px; }
+.cs-rs-preview span {
+    flex: none;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-rs-preview b { min-width: 0; overflow: hidden; color: var(--cs-ink); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cs-rs-preview b.is-empty { color: var(--cs-faint); font-weight: 500; }
+.cs-rs-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.cs-rs-actions .cs-addmed-cancel { height: 36px; }
+.cs-rs-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #2f76f0 0%, #1a62de 100%);
+    padding: 0 16px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(18, 104, 232, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.cs-rs-save:disabled { opacity: 0.45; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .cs-rs-hits, .cs-rs-file { animation: none; } }
+
+/* Result sheet: attachment chips and the computer / phone choice. */
+.cs-rs-file.is-done { padding: 0 4px 0 0; }
+.cs-rs-file-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    border-radius: 8px 0 0 8px;
+    background: none;
+    padding: 0 6px 0 10px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.cs-rs-file-view:hover .cs-rs-file-name { color: var(--cs-blue); text-decoration: underline; }
+.cs-rs-file-view > svg:first-child { color: var(--cs-teal); }
+.cs-rs-file-x {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--cs-faint);
+    cursor: pointer;
+}
+.cs-rs-file-x:hover { background: rgba(0, 0, 0, 0.06); color: var(--cs-ink); }
+.cs-rs-chooser {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 34px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 2px;
+    box-shadow: 0 4px 14px rgba(16, 28, 46, 0.08);
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-rs-chooser > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    padding: 0 12px;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-rs-chooser > button:hover:not(:disabled) { background: var(--cs-blue-soft); color: var(--cs-blue); }
+.cs-rs-chooser > button:disabled { opacity: 0.45; cursor: default; }
+.cs-rs-chooser > .cs-rs-chooser-x { padding: 0 8px; color: var(--cs-faint); }
+.cs-rs-phone-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--cs-teal);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) { .cs-rs-chooser { animation: none; } }
+
+/* ── BAND, DECLUTTERED (2026-09-26) ─────────────────────────────────────
+   Each fact once. The Last Visit card is a glance: what it was, how bad,
+   what was found, what was given, one line each; the whole card opens the
+   visit. What the Ongoing card carries is not repeated here. */
+.cs-lt-card.is-last.is-glance {
+    flex: 0 1 380px;
+    min-width: 280px;
+    max-width: 400px;
+    cursor: pointer;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.cs-lt-card.is-glance:hover { border-color: #c9d6ee; box-shadow: 0 2px 10px rgba(16, 28, 46, 0.06); }
+.cs-lt-card.is-glance:focus-visible { outline: 2px solid var(--cs-blue); outline-offset: 2px; }
+.cs-lt-card.is-glance .cs-lt-lv-when { display: inline-flex; align-items: center; gap: 4px; }
+.cs-lt-lv-go { color: var(--cs-faint); transition: color 0.14s ease, translate 0.14s ease; }
+.cs-lt-card.is-glance:hover .cs-lt-lv-go { color: var(--cs-blue); translate: 1px -1px; }
+.cs-lt-card.is-glance .cs-lt-lv-headline {
+    margin: 6px 0 0;
+    overflow: hidden;
+    font-size: 14.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-lv-meta {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--cs-faint);
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-lv-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 10px 0 0;
+    border-top: 1px solid var(--cs-line);
+    padding-top: 9px;
+}
+.cs-lt-lv-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.cs-lt-lv-row dt {
+    flex: 0 0 42px;
+    color: var(--cs-faint);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.cs-lt-lv-row dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--cs-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Ongoing: every item of the episode, open first; settled ones quieter,
+   below a hairline, still with their control. The list scrolls rather
+   than hiding the rest behind "+N more". */
+.cs-lt-card.is-ongoing .cs-lt-og-list { max-height: 188px; overflow-y: auto; scrollbar-width: thin; }
+.cs-lt-og-row.is-first-settled { margin-top: 4px; border-top: 1px dashed var(--cs-line-strong); padding-top: 6px; }
+.cs-lt-og-row.is-settled .cs-lt-og-title { color: var(--cs-label); font-weight: 650; }
+.cs-lt-og-row.is-settled .cs-lt-og-status {
+    overflow: hidden;
+    color: var(--cs-faint);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cs-lt-og-row.is-settled .cs-lt-og-mark { opacity: 0.7; }
+.cs-lt-card.is-ongoing .cs-lt-og-list.is-scrolling {
+    padding-bottom: 20px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+/* ── SEND TO LAB (2026-09-27) — SendToLabSheet.tsx ───────────────────── */
+.cs-stl { display: flex; flex-direction: column; gap: 14px; padding: 2px 4px 4px; }
+.cs-stl-patient { margin: -6px 0 0; color: var(--cs-faint); font-size: 12.5px; font-weight: 550; }
+.cs-stl-patient b { color: var(--cs-ink); font-weight: 700; }
+.cs-stl-sec { display: flex; flex-direction: column; gap: 7px; }
+.cs-stl-label {
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cs-stl-label em { margin-left: 6px; color: var(--cs-faint); font-style: normal; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.cs-stl-select,
+.cs-stl-input,
+.cs-stl-text,
+.cs-stl-text:hover,
+.cs-stl-text:focus {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #c9d1dd;
+    border-radius: 10px;
+    background: #fff;
+    color: var(--cs-ink);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: none;
+}
+.cs-stl-select { height: 38px; padding: 0 10px; font-weight: 600; cursor: pointer; }
+.cs-stl-input { height: 36px; padding: 0 11px; }
+.cs-stl-text { padding: 8px 11px; line-height: 1.45; resize: vertical; }
+.cs-stl-select:focus, .cs-stl-input:focus, .cs-stl-text:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    outline: none;
+}
+.cs-stl-phone { display: inline-flex; align-items: center; gap: 5px; color: #15803d; font-size: 12px; font-weight: 650; }
+.cs-stl-addphone { display: flex; gap: 8px; }
+.cs-stl-small {
+    flex: none;
+    height: 36px;
+    border: 1px solid var(--cs-line-strong);
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 12px;
+    color: var(--cs-label);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cs-stl-small:disabled { opacity: 0.5; cursor: default; }
+.cs-stl-none { margin: 0; color: var(--cs-faint); font-size: 12.5px; }
+.cs-stl-tests { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.cs-stl-test {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid var(--cs-line);
+    border-radius: 10px;
+    background: #fff;
+    padding: 8px 10px;
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+    transition: border-color 0.14s ease, background 0.14s ease;
+}
+.cs-stl-test input { position: absolute; opacity: 0; pointer-events: none; }
+.cs-stl-test.is-on { border-color: #bcd0f5; background: #f7faff; }
+.cs-stl-check {
+    display: grid;
+    width: 17px;
+    height: 17px;
+    flex: none;
+    place-items: center;
+    border: 1.5px solid #b6c2d4;
+    border-radius: 5px;
+    background: #fff;
+    color: #fff;
+}
+.cs-stl-test.is-on .cs-stl-check { border-color: #2563eb; background: #2563eb; }
+.cs-stl-test .cs-stl-testname { flex: 1; min-width: 0; color: var(--cs-ink); font-size: 13px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+.cs-stl-test em {
+    flex: none;
+    border-radius: 999px;
+    background: var(--cs-violet-soft);
+    padding: 2px 9px;
+    color: #6d28d9;
+    font-size: 11.5px;
+    font-style: normal;
+    font-weight: 700;
+}
+.cs-stl-error { margin: 0; color: var(--cs-red); font-size: 12.5px; font-weight: 600; }
+.cs-stl-foot {
+    position: sticky;
+    bottom: -18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 2px -4px -22px;
+    border-top: 1px solid var(--cs-line);
+    background: linear-gradient(180deg, rgba(246, 248, 252, 0.94) 0%, #f6f8fc 100%);
+    padding: 12px 4px 18px;
+}
+.cs-stl-foot .cs-addmed-cancel { height: 36px; }
+.cs-stl-cost { flex: 1; color: var(--cs-faint); font-size: 11.5px; font-weight: 600; }
+@media (max-width: 520px) {
+    .cs-stl-foot { flex-wrap: wrap; }
+    .cs-stl-cost { flex-basis: 100%; }
+    .cs-stl-foot .cs-stl-send { flex: 1; justify-content: center; min-width: 0; }
+}
+.cs-stl-send {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    max-width: 280px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #22a35a 0%, #16874a 100%);
+    padding: 0 16px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(22, 135, 74, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.cs-stl-send:disabled { opacity: 0.45; cursor: default; }
+.cs-stl-done { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 8px 8px; text-align: center; }
+.cs-stl-done-mark {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #22a35a 0%, #16874a 100%);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(22, 135, 74, 0.28);
+    animation: cs-token-in 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.cs-stl-done-title { margin: 6px 0 0; color: var(--cs-ink); font-size: 16px; font-weight: 800; }
+.cs-stl-done-sub { max-width: 400px; margin: 0; color: var(--cs-faint); font-size: 12.5px; line-height: 1.5; }
+.cs-stl-done-actions { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.cs-stl-link { display: inline-flex; align-items: center; gap: 5px; color: var(--cs-blue); font-size: 12.5px; font-weight: 700; text-decoration: none; }
+.cs-stl-link:hover { text-decoration: underline; }
+
+/* ── Body map field: "Not in the list? Add it as" (2026-09-27) ───────────── */
+.cs-jf-row.is-custom .cs-jf-check {
+    border: 1px dashed #b8c2d3;
+    background: #fff;
+    color: var(--cs-faint);
+}
+.cs-jf-row.is-custom.is-active { background: #f6f8fc; }
+.cs-jf-row.is-custom.is-active .cs-jf-check { border-style: solid; border-color: var(--cs-blue); color: var(--cs-blue); }
+.cs-jf-customkind {
+    display: inline-block;
+    margin-right: 7px;
+    border-radius: 6px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    vertical-align: 1px;
+}
+.cs-jf-customkind.is-finding { background: #dcf3ee; color: #0b6a62; }
+.cs-jf-customkind.is-symptom { background: #fde7ec; color: #be123c; }
+.cs-jf-customkind.is-assessment { background: #efe8ff; color: #6d28d9; }
+.cs-jf-none.is-error { color: var(--cs-red); font-weight: 600; }

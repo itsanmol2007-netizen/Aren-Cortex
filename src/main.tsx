@@ -30,6 +30,7 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { WelcomePage } from "./features/auth/WelcomePage";
 import { AuthLayout } from "./features/auth/AuthLayout";
 import { PublicPrescriptionPage } from "./features/publicRx/PublicPrescriptionPage";
+import { LabOrderPage } from "./features/publicRx/LabOrderPage";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -82,6 +83,9 @@ function RoutedApp() {
                 anonymous patient's phone never gets bounced toward a login
                 screen. */}
             <Route path="/prescriptions/:token" element={<PublicPrescriptionPage />} />
+            {/* The order a lab opens from WhatsApp; its token is the
+                credential too (lab-order-preview). Outside RequireAuth. */}
+            <Route path="/lab-orders/:token" element={<LabOrderPage />} />
             {/* Everything else — every workspace, every future route — sits
                 behind the auth gate. No verified session + active user +
                 active hospital ⇒ nothing renders but the login screen. */}

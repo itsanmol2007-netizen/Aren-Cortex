@@ -33,6 +33,45 @@
    flex-shrink: 0;
 }
 
+/* A shimmer fill for a REAL element, not a stand-in box guessed to be the
+   same size as one. `SkeletonTableRow`/`SkeletonTodayCard` (PatientsList.tsx)
+   apply this ALONGSIDE the exact class the real row/card uses on that same
+   element (`.prec-table-patient-name`, `.prec-status-pill`, ...) — so the
+   skeleton's height is whatever that class's real font-size/line-height/
+   padding already produce, not a second, hand-typed number that has to be
+   kept in sync by a human. The row-height mismatch this replaces was
+   "fixed" once already (2026-09-11, hand-measuring skeleton bar heights
+   against the real row) and had silently drifted back out of sync by
+   2026-09-19 the moment the real row's own typography changed — a Ctrl+F
+   for hard-coded skeleton heights will always eventually be wrong again;
+   inheriting the real class cannot be. Order matters here: this rule must
+   land AFTER patients-list.css in the cascade so it can override a chip's
+   own `background` while keeping everything else that class sets (padding,
+   border-radius, font-size) — it does, because `@import` is always hoisted
+   above a stylesheet's own rules, and this file's imports are what pull
+   patients-list.css in. */
+.prec-skel-text {
+   color: transparent !important;
+   background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%) !important;
+   background-size: 800px 100%;
+   animation: prec-shimmer 1.5s ease-in-out infinite;
+   border-color: transparent !important;
+   box-shadow: none !important;
+}
+
+/* A plain text element (`.prec-table-patient-name` and the like) sets no
+   `display` of its own — text needs none — so a skeleton standing in for
+   one needs `inline-block` to respect an explicit placeholder `width`.
+   Deliberately no `border-radius` here: a chip/pill's own class already
+   sets one (and its own padding, which is what actually needs preserving),
+   and this must not fight it — only the shimmer fill above does, which is
+   the one thing skeleton and real are SUPPOSED to differ on. A plain-text
+   placeholder that wants rounded corners sets its own inline `borderRadius`
+   instead, same as it already sets its own `width`. */
+.prec-skel-text--block {
+   display: inline-block;
+}
+
 /* ── Skeleton Card ───────────────────────────────────────────────────────── */
 
 /* No `display: flex` here — `.prec-today-card` (patients-list.css) never

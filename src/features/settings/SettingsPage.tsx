@@ -42,7 +42,7 @@ import type { ReactNode, RefObject } from "react";
 import {
     Activity, AlertTriangle, ArrowRight, Check, ChevronRight,
     ExternalLink, FileText, HelpCircle, Info, Keyboard, Laptop, Loader2, Lock,
-    LogOut, Mail, MonitorSmartphone, Receipt, Search, Settings2, Shield,
+    LogOut, Mail, MonitorSmartphone, Receipt, RefreshCw, Search, Settings2, Shield,
     ShieldCheck, Smartphone, Sparkles, Stethoscope, Tablet, Trash2, User, Users, X, CloudOff,
 } from "lucide-react";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
@@ -58,7 +58,11 @@ import {
     type SubscriptionRequest, type SubscriptionRequestKind, type UserDevice,
 } from "../../lib/db";
 import { clearAllConsultDrafts } from "../../lib/consultDraft";
-import { PROFILES, type ChartKind } from "../synapse/specialtyProfile";
+import {
+    isCatalogueSyncEnabled, setCatalogueSyncEnabled,
+    isPatientPrefetchEnabled, setPatientPrefetchEnabled,
+} from "../../lib/offline/syncPreference";
+import { PROFILES, SELECTABLE_PROFILE_IDS, type ChartKind } from "../synapse/specialtyProfile";
 import { updateHospitalSpecialtyProfile, invalidateHospital } from "../../lib/db";
 import { BINDINGS } from "../../lib/keyboard/keymap";
 import { ShortcutsSheet } from "../../components/ShortcutsSheet";
@@ -71,16 +75,18 @@ import { sendSupportRequest } from "../../lib/db/messaging";
 import { SETTINGS_INDEX, searchSettings, type SettingEntry } from "./settingsRegistry";
 import { SupportRequestModal, type SupportTopic } from "./SupportRequestModal";
 import { AppLockCard } from "./AppLockCard";
-import { InstallAppCard } from "./InstallAppCard";
+import { InstallAppSection } from "./InstallAppCard";
 import { requestSettingFocus } from "./settingsFocus";
 import { toast } from "sonner";
+import arenLogo from "../../assets/aren-logo.png";
 import "./settings.css";
 
 /** Where "Privacy & security" goes — the one external URL we were actually
  *  given. */
 const PRIVACY_URL = "https://www.arenode.com/privacy";
 
-const PROFILE_LIST = Object.values(PROFILES);
+/** What the picker offers — the MVP four (see SELECTABLE_PROFILE_IDS). */
+const PROFILE_LIST = SELECTABLE_PROFILE_IDS.map((id) => PROFILES[id]).filter(Boolean);
 
 /**
  * The doctor photo's backdrop, ON SCREEN.
@@ -181,6 +187,58 @@ export function SettingsCard({
 }
 
 /**
+ * One background-sync switch row — Data & Sync's two independent toggles
+ * (catalogue mirror, patient prefetch) share this exact shape rather than
+ * each hand-rolling the same switch markup.
+ */
+function SyncToggleRow({
+    label, description, enabled, saving, onToggle, footNote,
+}: {
+    label: string;
+    description: string;
+    enabled: boolean | null;
+    saving: boolean;
+    onToggle: () => void;
+    /** Shown only while off — "you'll still see what you've already opened". */
+    footNote: string;
+}) {
+    return (
+        <div className="flex flex-col gap-[6px]">
+            <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-[var(--cs-line)] px-[12px] py-[11px]">
+                <span className="flex min-w-0 flex-col gap-[2px]">
+                    <span className="text-[13px] font-semibold text-[var(--cs-ink)]">{label}</span>
+                    <span className="text-[11.5px] leading-[1.45] text-[var(--cs-faint)]">{description}</span>
+                </span>
+                <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled ?? true}
+                    aria-label={label}
+                    disabled={enabled === null || saving}
+                    onClick={onToggle}
+                    className={
+                        "relative h-[22px] w-[38px] flex-none rounded-full border transition-colors duration-150 disabled:opacity-60 " +
+                        (enabled !== false
+                            ? "border-[var(--cs-blue)] bg-[var(--cs-blue)]"
+                            : "border-[var(--cs-line-strong)] bg-[var(--cs-page)]")
+                    }
+                >
+                    <span
+                        className={
+                            "absolute top-1/2 h-[16px] w-[16px] -translate-y-1/2 rounded-full bg-white shadow-[0_1px_3px_rgba(16,28,46,0.35)] transition-[left] duration-150 " +
+                            (enabled !== false ? "left-[19px]" : "left-[3px]")
+                        }
+                    />
+                </button>
+            </div>
+            {enabled === false && (
+                <p className="m-0 px-[2px] text-[11.5px] leading-[1.5] text-[var(--cs-faint)]">{footNote}</p>
+            )}
+        </div>
+    );
+}
+
+/**
  * One setting row. `trailing` says what will happen: a chevron opens
  * something here, an external glyph leaves the app, and "Not yet" is the
  * honest state for a row whose backend does not exist.
@@ -232,6 +290,63 @@ function SettingRow({
         >
             {body}
         </button>
+    );
+}
+
+/**
+ * "About AREN" — was a label and a version number with no `onClick` at all
+ * (Anmol, 2026-09-20: "this button is dead"). Kept deliberately modest:
+ * the product's name, its version, what it is, and the one line of brand
+ * copy that already exists elsewhere in this app (the printed
+ * prescription's own footer credit, `prescriptionLabels.ts`'s
+ * `footerCredit`) rather than new "profound" prose invented here — that's
+ * the founder's own words to write, not this page's to guess at.
+ */
+function AboutAppModal({ onClose }: { onClose: () => void }) {
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
+
+    return (
+        <div
+            className="fixed inset-0 z-[9998] flex items-center justify-center bg-[rgba(11,23,51,0.45)] p-[16px] backdrop-blur-[6px]"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
+            <div
+                role="dialog" aria-modal="true" aria-label="About AREN Cortex"
+                className="w-full max-w-[380px] overflow-hidden rounded-[20px] bg-white shadow-[0_24px_60px_rgba(16,28,46,0.28)]"
+            >
+                <div className="flex items-start justify-between px-[22px] pt-[22px]">
+                    <img src={arenLogo} alt="" className="h-[34px] w-[34px] object-contain" />
+                    <button
+                        type="button" onClick={onClose} aria-label="Close"
+                        className="rounded-full p-[6px] text-[var(--cs-faint)] hover:bg-[var(--cs-page)] hover:text-[var(--cs-ink)]"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+                <div className="px-[22px] pb-[22px] pt-[10px]">
+                    <h2 className="m-0 text-[19px] font-black text-[var(--cs-ink)]">AREN Cortex</h2>
+                    <p className="m-0 mt-[2px] text-[12px] font-bold uppercase tracking-[0.06em] text-[var(--cs-faint)]">
+                        Version 1.0.0
+                    </p>
+                    <p className="m-0 mt-[14px] text-[13px] leading-[1.6] text-[var(--cs-muted)]">
+                        A clinical workspace for the consult, the prescription and everything
+                        a clinic runs on besides — built by Arenode.
+                    </p>
+                    <p className="m-0 mt-[14px] rounded-[12px] border border-[var(--cs-line)] bg-[var(--cs-page)] px-[14px] py-[12px] text-[13px] font-semibold italic leading-[1.6] text-[var(--cs-ink)]">
+                        "Generated with care, through Arenode."
+                    </p>
+                    <div className="mt-[16px] flex items-center gap-[10px] border-t border-[var(--cs-line)] pt-[14px] text-[12px] text-[var(--cs-faint)]">
+                        <a href="https://www.arenode.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-[var(--cs-blue)]">
+                            arenode.com
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -1018,6 +1133,45 @@ export function SettingsPage({
     /** Non-null while the shared "our team handles this" surface is open. */
     const [supportTopic, setSupportTopic] = useState<SupportTopic | null>(null);
 
+    // Background sync — two independent jobs now (2026-09-20 split): the
+    // medicine catalogue mirror (~525k rows, by far the bigger of the two)
+    // and the 3-month patient prefetch (lib/offline/syncPreference.ts).
+    // `null` only until the local Dexie read resolves; both default to
+    // enabled, matching what both jobs already did before either toggle
+    // existed.
+    const [catalogueSyncEnabled, setCatalogueSyncEnabledState] = useState<boolean | null>(null);
+    const [catalogueSyncSaving, setCatalogueSyncSaving] = useState(false);
+    const [patientPrefetchEnabled, setPatientPrefetchEnabledState] = useState<boolean | null>(null);
+    const [patientPrefetchSaving, setPatientPrefetchSaving] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        isCatalogueSyncEnabled(doctorId).then((v) => { if (!cancelled) setCatalogueSyncEnabledState(v); });
+        isPatientPrefetchEnabled(doctorId).then((v) => { if (!cancelled) setPatientPrefetchEnabledState(v); });
+        return () => { cancelled = true; };
+    }, [doctorId]);
+    const toggleCatalogueSync = async () => {
+        if (catalogueSyncEnabled === null || catalogueSyncSaving) return;
+        const next = !catalogueSyncEnabled;
+        setCatalogueSyncSaving(true);
+        try {
+            await setCatalogueSyncEnabled(doctorId, next);
+            setCatalogueSyncEnabledState(next);
+        } finally {
+            setCatalogueSyncSaving(false);
+        }
+    };
+    const togglePatientPrefetch = async () => {
+        if (patientPrefetchEnabled === null || patientPrefetchSaving) return;
+        const next = !patientPrefetchEnabled;
+        setPatientPrefetchSaving(true);
+        try {
+            await setPatientPrefetchEnabled(doctorId, next);
+            setPatientPrefetchEnabledState(next);
+        } finally {
+            setPatientPrefetchSaving(false);
+        }
+    };
+
     // Consult Setup — the specialty profile. Back on Settings at Anmol's call
     // (it briefly lived on Clinic): it configures the ENGINE, not the clinic's
     // public identity, which is what the rest of Clinic is about.
@@ -1053,6 +1207,10 @@ export function SettingsPage({
     // the consult screen already owns rather than spending a card on a
     // 44-row scrolling list.
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
+    // "About AREN" had a label and a version number but no `onClick` at
+    // all — a row that looked pressable and did nothing (Anmol, 2026-09-20:
+    // "this button is dead"). See `AboutAppModal` below.
+    const [aboutOpen, setAboutOpen] = useState(false);
 
     // Health is SUMMARISED here and explained on its own page.
     const [view, setView] = useState<"settings" | "health">("settings");
@@ -1848,12 +2006,56 @@ export function SettingsPage({
                             </div>
                         </SettingsCard>
 
+                        {/* ══ Data & Sync ═════════════════════════════════════
+                            "Add the option in the settings page which by
+                            default downloads the whole past three months of
+                            patient data and medicine records... I don't need
+                            them all for right now, it just counts as an
+                            egress in database" (Anmol, 2026-09-19) — split
+                            into two independent switches (2026-09-20): "there
+                            should also be option of turning off the medicine
+                            downloading thing" separately from the smaller
+                            patient backup. "Install app" folded in as a
+                            third subsection rather than its own card, which
+                            left this row's second cell permanently empty
+                            once App Lock was the only thing left to pair it
+                            with (screenshot: "this empty space, sign of
+                            unoptimised design") — restores the clean two-
+                            card row. Per-device, like the rest of this
+                            card's neighbours (Devices, App Lock): turning
+                            either sync switch off here does not turn it off
+                            on a colleague's phone. */}
+                        <SettingsCard
+                            id="set-card-sync"
+                            icon={<RefreshCw size={17} />}
+                            tint="bg-[rgba(18,104,232,0.10)] text-[var(--cs-blue)]"
+                            title="Data & Sync"
+                        >
+                            <div className="flex flex-col gap-[10px]">
+                                <SyncToggleRow
+                                    label="Medicine catalogue"
+                                    description="Downloads the full medicine catalogue in the background, so search and pricing work offline. The bigger of the two background downloads."
+                                    enabled={catalogueSyncEnabled}
+                                    saving={catalogueSyncSaving}
+                                    onToggle={() => void toggleCatalogueSync()}
+                                    footNote="You'll still see any medicine you search for — this only stops downloading the rest ahead of time."
+                                />
+                                <SyncToggleRow
+                                    label="Patient history"
+                                    description="Downloads your last 3 months of patients in the background, so they open offline."
+                                    enabled={patientPrefetchEnabled}
+                                    saving={patientPrefetchSaving}
+                                    onToggle={() => void togglePatientPrefetch()}
+                                    footNote="You'll still see any patient you open — this only stops the ones you haven't."
+                                />
+                                <div className="border-t border-[var(--cs-line)] pt-[10px]">
+                                    <InstallAppSection />
+                                </div>
+                            </div>
+                        </SettingsCard>
+
                         {/* ══ App Lock ════════════════════════════════════════ */}
                         {auth.status === "authed" && <AppLockCard userId={auth.identity.user.id} />}
-
-                        {/* ══ Install App — right beside App Lock, same
-                            treatment: both are "make this device yours". ══ */}
-                        <InstallAppCard />
                     </div>
 
                     {/* ══ System Health — a small section, opening a page ═════
@@ -1903,7 +2105,7 @@ export function SettingsPage({
                     >
                         {[
                             { icon: <HelpCircle size={15} />, label: "Help & support", sub: "Guides, and a way to reach us", onClick: () => onNavigate("support") },
-                            { icon: <Info size={15} />, label: "About AREN", sub: "Cortex v1.0.0" },
+                            { icon: <Info size={15} />, label: "About AREN", sub: "Cortex v1.0.0", onClick: () => setAboutOpen(true) },
                             { icon: <FileText size={15} />, label: "Terms of service", sub: "Read our terms", href: TERMS_URL },
                             { icon: <Shield size={15} />, label: "Privacy policy", sub: "arenode.com/privacy", href: PRIVACY_URL },
                         ].map((item) => {
@@ -1987,6 +2189,7 @@ export function SettingsPage({
                 />
             )}
             {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
+            {aboutOpen && <AboutAppModal onClose={() => setAboutOpen(false)} />}
 
             {supportTopic && (
                 <SupportRequestModal

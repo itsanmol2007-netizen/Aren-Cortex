@@ -349,6 +349,7 @@
 .prac-settings-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 .prac-settings-icon.is-teal { background: var(--cs-teal-soft); color: var(--cs-teal); }
 .prac-settings-icon.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.prac-settings-icon.is-slate { background: #f1f5f9; color: #475569; }
 
 .prac-settings-chevron {
     flex: none;
@@ -597,6 +598,22 @@
 .prac-card--violet .prac-card-add:hover {
     background: var(--cs-violet-soft); border-color: transparent;
 }
+/* Medicine Pricing (teal) and Exercise Library/Additional Charges (blue)
+   gained their own "+ Add" header buttons 2026-09-20 (Anmol: "no any
+   obvious button for adding new charge") — same tone-matched treatment
+   the slate/violet cards already had, so hovering theirs isn't inert. */
+.prac-card--teal .prac-card-add {
+    border-color: rgba(15, 118, 110, 0.35); color: var(--cs-teal);
+}
+.prac-card--teal .prac-card-add:hover {
+    background: var(--cs-teal-soft); border-color: transparent;
+}
+.prac-card--blue .prac-card-add {
+    border-color: rgba(18, 104, 232, 0.35); color: var(--cs-blue);
+}
+.prac-card--blue .prac-card-add:hover {
+    background: var(--cs-blue-soft); border-color: transparent;
+}
 
 /* The inline call to action inside an empty state — a real button, not a
    sentence describing where to go. */
@@ -707,6 +724,10 @@
     z-index: 0;
     opacity: 0.55;
     pointer-events: none;
+    /* Anchors the corner it's already pinned to as `fillArtScale` scales it
+       up in the near-empty case — the CSS default (center) would grow the
+       mark away from that corner instead of INTO the dead space below it. */
+    transform-origin: bottom right;
 }
 
 .prac-rows {
@@ -817,6 +838,7 @@
    still wearing the teal default before this. */
 .prac-med-icon.is-slate { background: #f1f5f9; color: #475569; }
 .prac-med-icon.is-violet { background: var(--cs-violet-soft); color: var(--cs-violet); }
+.prac-med-icon.is-blue { background: var(--cs-blue-soft); color: var(--cs-blue); }
 
 .prac-med-info {
     flex: 1;
@@ -1100,6 +1122,34 @@
     line-height: 1.5;
 }
 
+/* The empty-state SVG used to sit directly on the card's white body — a
+   44-62px line mark (BlankArt.tsx's own size rule, unchanged here) reads
+   as thin rather than designed once nothing else is on the card
+   (Anmol, 2026-09-20: "if there is nothing to show, show a beautiful
+   svg... it should look beautiful, like really beautiful"). A soft,
+   tone-matched medallion gives it somewhere to sit — the SAME four tint
+   tokens every glyph tile on this page already carries
+   (`.prac-glyph.is-teal` etc.), reused rather than a fifth treatment
+   invented for just this spot. 72px = 24 × the page's own 3px rhythm
+   (`--cs-s1`), not picked by eye; the 3px margin below is one more step
+   of that same scale, so the gap to the headline reads as `--cs-s3` (8px)
+   total rather than an arbitrary number. */
+.prac-empty-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    margin-bottom: var(--cs-s1);
+    background: #f8fafc;
+}
+
+.prac-card--teal .prac-empty-art { background: var(--cs-teal-soft); }
+.prac-card--violet .prac-empty-art { background: var(--cs-violet-soft); }
+.prac-card--blue .prac-empty-art { background: var(--cs-blue-soft); }
+.prac-card--slate .prac-empty-art { background: #f1f5f9; }
+
 /* ── The card foot — `PracticeCard`'s `foot` prop, one shape (`FootLink`)
    for the persistent "Manage all X →" / "View all X →" link every
    populated primary card carries, replacing the dashed "add another" row
@@ -1248,6 +1298,27 @@
 .prac-quiet-pill.is-alt {
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
+}
+
+/* `.prac-quiet-pill`'s own `align-self: flex-start` is right for the column
+   layout it was built for (`.prac-quiet-row`), but inside a `.prac-modal-row`
+   — a horizontal row, `align-items: center` — that same flex-start pins the
+   pill to the row's top edge instead of centering it beside the label,
+   which on a two-line label (name + manufacturer) reads as the price
+   floating above the row rather than sitting next to it (Medicine Pricing
+   list, Anmol 2026-09-20: "one is tag on the top, one is on the bottom").
+   Same fix `.prac-setting-row .prac-quiet-pill` already has, just for the
+   modal row list instead of the settings list. `.prac-row` gets the same
+   fix for the same reason — Medicine Pricing/Exercise Library/Additional
+   Charges' card-body rows (2026-09-20 round two: the actual bug was
+   `.prac-setting-row`'s `flex: 1`, built for exactly the 1-2-row Related
+   Settings tile it stretches to fill, wrongly reused for a real row list —
+   fixed by moving those three onto this same `.prac-row`/`.prac-rows`
+   pattern instead of inventing a third one). */
+.prac-modal-row .prac-quiet-pill,
+.prac-row .prac-quiet-pill {
+    align-self: center;
+    flex: none;
 }
 
 /* ── Your Clinical Terms — inline add, then a wrapped chip cloud instead

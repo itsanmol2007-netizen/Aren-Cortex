@@ -44,17 +44,19 @@
 // under `prefers-reduced-motion`.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ClipboardList, Plus, Search, X } from "lucide-react";
+import { Check, ClipboardList, MapPin, PenLine, Plus, Search, X } from "lucide-react";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
     searchStory, storyClauses, openStoryDimensions, itemsForDimension,
-    storyHas, DIMENSION_PROMPT,
+    storyHas, DIMENSION_PROMPT, looksLikeNote,
 } from "./story";
 import type { Story, StorySearchItem, StoryDimension } from "./story";
+import { clinicalSiteLabel, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
+import { impliedSites, searchSites, suggestSites, type SiteHit } from "../../lib/body/siteSearch";
 import {
     ASKS_DURATION, DURATION_QUICK, durationChoicesFor, escalationFor,
     formatDuration, shortDuration, type DurationChoice,
@@ -208,6 +210,19 @@ export interface CaseSheetEntry {
      * everything. Absent means nobody was asked or the question was skipped.
      */
     durationDays?: number;
+    /**
+     * "Since when" for a standing history chip that earns the detail — e.g.
+     * "2019" on a Previous MI chip, "2023" on a Pacemaker chip. Free text,
+     * never forced (Anmol, 2026-09-21: "obviously loosey, it will not
+     * force... you can skip from when if you don't know"). Rides the chip
+     * the same way `durationDays` rides a symptom's — see the badge next to
+     * this one in the chip render.
+     */
+    onsetNote?: string | null;
+    /** A local finding — swelling, tenderness, a bruise — that happens at a place. */
+    localizable?: boolean;
+    /** Where it was found ("Right knee"); absent until someone says. */
+    sites?: SiteRef[];
 }
 
 /**
@@ -256,21 +271,57 @@ const TONE_RECEPTION: Record<Observable["kind"], string> = {
  *  rank-and-filter over the observable catalogue, so a doctor can add a
  *  symptom/finding/history item to a template through the identical search
  *  the case sheet itself uses, rather than a second implementation of it. */
-export function useCatalogueSearch(observables: Observable[], query: string) {
-    return useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return [];
-        return observables
-            .map((o) => ({ o, r: rankOf(o, q) }))
-            .filter((x) => x.r < 99)
-            .sort((a, b) =>
-                a.r - b.r ||
-                KIND_ORDER[a.o.kind] - KIND_ORDER[b.o.kind] ||
-                a.o.label.localeCompare(b.o.label)
-            )
-            .slice(0, MAX_RESULTS)
-            .map((x) => x.o);
-    }, [observables, query]);
+/** Systems that are never "someone else's" — general findings, history,
+ *  infection signs belong to every specialty. */
+const NEUTRAL_SYSTEMS = new Set(["general", "history", "infection"]);
+
+/**
+ * Whether a specialty that prefers some systems would rank this one lower:
+ * in Orthopedics, "Swelling in legs" is cardiovascular oedema, not the
+ * swollen knee the doctor is typing about. Lowered, never hidden — ranking
+ * decides what is offered first, never what is reachable.
+ */
+export function isOffSpecialty(o: Observable, preferSystems?: string[], preferDomain?: string): boolean {
+    if (!preferSystems?.length || preferSystems.includes(o.system)) return false;
+    // A general finding is everyone's only if it is tagged for this
+    // practice's own domain — "Localised swelling" is, "Swelling all over
+    // body" (generalised oedema, OPD only) is not.
+    if (NEUTRAL_SYSTEMS.has(o.system)) return !!preferDomain && !o.domains.includes(preferDomain);
+    return true;
+}
+
+/** The catalogue search itself, pure — see `useCatalogueSearch`. */
+export function searchCatalogue(observables: Observable[], query: string, preferSystems?: string[], preferDomain?: string): Observable[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const prefer = preferSystems ?? [];
+    // A text-match rank, shifted by specialty: a preferred system's entry
+    // gains a little; another system's (cardiovascular swelling in an ortho
+    // clinic) drops below every good match that fits.
+    const score = (o: Observable, r: number) =>
+        r + (isOffSpecialty(o, prefer, preferDomain) ? 2.5 : 0) - (prefer.includes(o.system) ? 0.3 : 0);
+    return observables
+        .map((o) => {
+            const r = rankOf(o, q);
+            return { o, r, s: r < 99 ? score(o, r) : 99 };
+        })
+        .filter((x) => x.r < 99)
+        .sort((a, b) =>
+            a.s - b.s ||
+            KIND_ORDER[a.o.kind] - KIND_ORDER[b.o.kind] ||
+            a.o.label.localeCompare(b.o.label)
+        )
+        .slice(0, MAX_RESULTS)
+        .map((x) => x.o);
+}
+
+export function useCatalogueSearch(observables: Observable[], query: string, preferSystems?: string[], preferDomain?: string) {
+    const key = `${(preferSystems ?? []).join(",")}|${preferDomain ?? ""}`;
+    return useMemo(
+        () => searchCatalogue(observables, query, preferSystems, preferDomain),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [observables, query, key],
+    );
 }
 
 // ── the command bar ────────────────────────────────────────────────────────
@@ -305,13 +356,17 @@ type BarResult =
     /** How long the complaint in the current duration slot has been going on.
      *  A fourth vocabulary the same box routes, on exactly the terms the
      *  other three already established — see `durationCandidates`. */
-    | { t: "duration"; key: string; complaint: string; choice: DurationChoice };
+    | { t: "duration"; key: string; complaint: string; choice: DurationChoice }
+    /** Where the local finding just added was found — the where-slot. */
+    | { t: "site"; key: string; finding: string; hit: SiteHit }
+    /** Anything typed as a sentence, kept word for word on the story. */
+    | { t: "note"; key: string; text: string };
 
 interface BarProps {
     observables: Observable[];
     /** labels already on the sheet, so a result shows a tick */
     onSheet: Set<string>;
-    onToggle: (o: Observable) => void;
+    onToggle: (o: Observable, opts?: { deferSite?: boolean }) => void;
     /**
      * The story half of the same box. Both optional: General OPD passes
      * neither and gets exactly the catalogue-only bar it always had, so this
@@ -369,11 +424,45 @@ interface BarProps {
      * exists to remove.
      */
     durationCandidates?: string[];
+    /**
+     * Body systems this specialty works in ("musculoskeletal" for
+     * Orthopedics and Physiotherapy). Matches from other systems rank below
+     * the ones that fit and name their system on the row — see
+     * `isOffSpecialty`. Absent: plain text ranking, as before.
+     */
+    preferSystems?: string[];
+    /** the catalogue domain tag this practice's findings carry ("physio") */
+    preferDomain?: string;
     /** label -> days, for the chips already answered — read to decide whether
      *  a threshold escalation is worth offering. */
     durationsByLabel?: Map<string, number>;
     /** `null` clears a duration already recorded — what Backspace undoes. */
     onDurationAnswer?: (label: string, days: number | null) => void;
+    /**
+     * ── THE WHERE-SLOT (2026-09-25) ───────────────────────────────────────
+     *
+     * A local finding picked here ("Joint swelling / effusion") is asked
+     * "where?" in the same box, the way a complaint is asked "how long?":
+     * type "kn" and the knee is on top, Enter, done. Places already in the
+     * visit and places the complaints name ("Knee pain") lead. Typing
+     * something that is not a place ("worse on standing") simply searches
+     * as always; the question steps aside rather than blocking. Space skips.
+     *
+     * `onSiteChange` records (or, with `false`, takes back) one place for a
+     * finding. Absent, local findings are added bare, exactly as before.
+     */
+    siteKnown?: SiteRef[];
+    onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
+    /**
+     * ── FREE-TEXT STORY (2026-09-27) ──────────────────────────────────────
+     *
+     * "Fell from bike yesterday" has no chip. Anything typed as a sentence is
+     * offered as a note on the visit's story, word for word (`looksLikeNote`
+     * decides what reads as a sentence). It leads the list when nothing in
+     * the vocabularies starts with what was typed, and trails it otherwise,
+     * so a catalogue search is never pre-empted. Absent: no note row.
+     */
+    onStoryNote?: (text: string) => void;
 }
 
 /**
@@ -384,7 +473,8 @@ export function ClinicalCommandBar({
     observables, onSheet, onToggle, story, onStoryAdd, onStoryRemove, leadComplaint,
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
     templates, onApplyTemplate,
-    durationCandidates, durationsByLabel, onDurationAnswer,
+    durationCandidates, durationsByLabel, onDurationAnswer, preferSystems, preferDomain,
+    siteKnown, onSiteChange, onStoryNote,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -397,7 +487,7 @@ export function ClinicalCommandBar({
     const boxRef = useRef<HTMLDivElement>(null);
     const stripRef = useRef<HTMLDivElement>(null);
 
-    const obsResults = useCatalogueSearch(observables, query);
+    const obsResults = useCatalogueSearch(observables, query, preferSystems, preferDomain);
     const storyOn = !!(story && onStoryAdd);
 
     /**
@@ -448,7 +538,10 @@ export function ClinicalCommandBar({
          *  They ride the SAME history so Backspace walks one timeline, not
          *  two interleaved ones the clinician has to hold in their head. */
         | { kind: "durskip"; label: string }
-        | { kind: "duration"; label: string };
+        | { kind: "duration"; label: string }
+        /** the where-slot's own two steps, on the same one timeline */
+        | { kind: "siteskip"; label: string }
+        | { kind: "site"; label: string; site: SiteRef };
     const [history, setHistory] = useState<Step[]>([]);
 
     const openDims = useMemo(
@@ -471,7 +564,27 @@ export function ClinicalCommandBar({
      * duration first can still type "3 weeks" and pick it. The sequence is a
      * default, and defaults are exactly where clinical order belongs.
      */
-    const slot: StoryDimension | null = leadComplaint ? (openDims[0] ?? null) : null;
+    /**
+     * ── THE WHERE-SLOT ─────────────────────────────────────────────────────
+     * The local finding just added, while its place is being asked. Takes
+     * precedence over the story and duration questions — it was asked by the
+     * very keystroke that added the finding, and it is one word to answer.
+     * Gone the moment the chip is (removed from the sheet) or the doctor
+     * moves on to anything else.
+     */
+    const [siteAsk, setSiteAsk] = useState<string | null>(null);
+    const siteOn = !!onSiteChange;
+    const siteSlot = siteOn && siteAsk && onSheet.has(siteAsk) ? siteAsk : null;
+    const skipSite = useCallback(() => {
+        if (!siteSlot) return;
+        setSiteAsk(null);
+        setHistory((h) => [...h, { kind: "siteskip", label: siteSlot }]);
+        setActive(0);
+        inputRef.current?.focus();
+    }, [siteSlot]);
+
+    const storySlot: StoryDimension | null = leadComplaint ? (openDims[0] ?? null) : null;
+    const slot: StoryDimension | null = siteSlot ? null : storySlot;
 
     /** Step past the current question without answering it. */
     const skipSlot = useCallback(() => {
@@ -491,8 +604,8 @@ export function ClinicalCommandBar({
     const [durationSkipped, setDurationSkipped] = useState<Set<string>>(new Set());
     const durationOn = !storyOn && !!durationCandidates?.length && !!onDurationAnswer;
     const durationSlot = useMemo(
-        () => (durationOn ? (durationCandidates!.find((l) => !durationSkipped.has(l)) ?? null) : null),
-        [durationOn, durationCandidates, durationSkipped]
+        () => (durationOn && !siteSlot ? (durationCandidates!.find((l) => !durationSkipped.has(l)) ?? null) : null),
+        [durationOn, siteSlot, durationCandidates, durationSkipped]
     );
 
     const skipDuration = useCallback(() => {
@@ -579,6 +692,25 @@ export function ClinicalCommandBar({
                 inputRef.current?.focus();
                 return;
             }
+            if (step.kind === "siteskip") {
+                // Ask again, as long as the finding is still on the sheet.
+                if (!onSheet.has(step.label)) continue;
+                setSiteAsk(step.label);
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
+            if (step.kind === "site") {
+                // Take the place back and ask again — "wrong knee".
+                if (!onSheet.has(step.label)) continue;
+                onSiteChange?.(step.label, step.site, false);
+                setSiteAsk(step.label);
+                setHistory(next);
+                setActive(0);
+                inputRef.current?.focus();
+                return;
+            }
             if (step.kind === "duration") {
                 // Clearing the answer puts the complaint back in the rotation
                 // on its own — `durationCandidates` is recomputed from what is
@@ -602,7 +734,7 @@ export function ClinicalCommandBar({
         if (clauses.length > 0) onStoryRemove?.(clauses[clauses.length - 1].item);
         setActive(0);
         inputRef.current?.focus();
-    }, [history, story, onStoryRemove, clauses]);
+    }, [history, story, onStoryRemove, clauses, onSheet, onSiteChange]);
 
     /**
      * Put every skipped question back in the rotation at once.
@@ -666,9 +798,22 @@ export function ClinicalCommandBar({
         }));
     }, [durationSlot, query]);
 
-    const results = useMemo<BarResult[]>(() => {
+    /** The sheet's region-named complaints, for the where-slot's second tier. */
+    const implied = useMemo(() => (siteSlot ? impliedSites(onSheet) : []), [siteSlot, onSheet]);
+
+    /** What the typed query means as a PLACE, while a place is being asked.
+     *  Leads the list for the same reason a duration does; a query that is
+     *  no place at all yields nothing here and searches as it always has. */
+    const siteMatches = useMemo<BarResult[]>(() => {
+        if (!siteSlot || !query.trim()) return [];
+        return searchSites(query, siteKnown ?? [], implied, 5).map((hit) => ({
+            t: "site" as const, key: `w:${siteSlot}:${hit.label}`, finding: siteSlot, hit,
+        }));
+    }, [siteSlot, query, siteKnown, implied]);
+
+    const searchResults = useMemo<BarResult[]>(() => {
         const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
-        if (!storyOn) return [...durationMatches, ...templateMatches, ...obs];
+        if (!storyOn) return [...siteMatches, ...durationMatches, ...templateMatches, ...obs];
         const st = searchStory(query, story!, 6);
 
         /**
@@ -693,12 +838,42 @@ export function ClinicalCommandBar({
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
         const rest: BarResult[] = st.filter((it) => !inSlot(it))
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
-        return [...templateMatches, ...lead, ...obs, ...rest];
-    }, [obsResults, storyOn, query, story, slot, templateMatches, durationMatches]);
+        return [...siteMatches, ...templateMatches, ...lead, ...obs, ...rest];
+    }, [obsResults, storyOn, query, story, slot, templateMatches, durationMatches, siteMatches]);
+
+    /**
+     * The typed sentence itself, as a story note. Leads when nothing offered
+     * begins with what was typed (so "fell from bike yesterday" + Enter keeps
+     * it), trails otherwise (so "knee pain" + Enter still takes the chip).
+     */
+    const results = useMemo<BarResult[]>(() => {
+        const q = query.trim();
+        if (!onStoryNote || !looksLikeNote(q)) return searchResults;
+        const note: BarResult = { t: "note", key: `n:${q.toLowerCase()}`, text: q };
+        const lower = q.toLowerCase();
+        const labelOf = (r: BarResult) => r.t === "obs" ? r.o.label
+            : r.t === "template" ? r.tpl.name
+                : r.t === "duration" ? r.choice.label
+                    : r.t === "site" ? r.hit.label
+                        : r.t === "story" ? r.it.label : "";
+        // ...or when a parsed answer opens the sentence ("10 days back" is the
+        // duration "10 days", not a note).
+        const parsed = (r: BarResult) => r.t === "duration" || r.t === "site" || (r.t === "story" && r.it.dimension === "Duration");
+        const startsWith = searchResults.some((r) => {
+            const l = labelOf(r).toLowerCase();
+            return l.startsWith(lower) || (parsed(r) && !!l && lower.startsWith(l));
+        });
+        return startsWith ? [...searchResults, note] : [note, ...searchResults];
+    }, [searchResults, query, onStoryNote]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
         if (query.trim()) return [];
+        if (siteSlot) {
+            return suggestSites(siteKnown ?? [], implied, 6).map((hit) => ({
+                t: "site" as const, key: `wp:${siteSlot}:${hit.label}`, finding: siteSlot, hit,
+            }));
+        }
         if (durationSlot) {
             // The everyday answers, offered — and the box still takes any
             // number typed over the top of them. A ladder is a shortcut here,
@@ -714,7 +889,7 @@ export function ClinicalCommandBar({
         if (!storyOn || !slot) return [];
         return itemsForDimension(story!, slot, 6)
             .map((it) => ({ t: "story", key: `p:${it.id}`, it }));
-    }, [storyOn, query, story, slot, durationSlot]);
+    }, [storyOn, query, story, slot, durationSlot, siteSlot, siteKnown, implied]);
 
     const showPrompts = focused && !query.trim() && prompts.length > 0;
     const shown = query.trim() ? results : prompts;
@@ -773,8 +948,22 @@ export function ClinicalCommandBar({
      *  to `onApplyTemplate`, which runs each of its items through the same
      *  guarded accept path as everything else (see App.tsx's applyTemplate). */
     const take = (r: BarResult) => {
-        if (r.t === "obs") onToggle(r.o);
+        // Anything taken other than a place moves on from the where-slot; a
+        // new local finding opens it again for itself, below.
+        if (r.t !== "site") setSiteAsk(null);
+        if (r.t === "site") {
+            onSiteChange?.(r.finding, r.hit.site, true);
+            setHistory((h) => [...h, { kind: "site", label: r.finding, site: r.hit.site }]);
+            setSiteAsk(null);
+        }
+        else if (r.t === "obs") {
+            const adding = !onSheet.has(r.o.label);
+            const ask = siteOn && adding && r.o.localizable;
+            onToggle(r.o, ask ? { deferSite: true } : undefined);
+            if (ask) setSiteAsk(r.o.label);
+        }
         else if (r.t === "template") onApplyTemplate?.(r.tpl.id);
+        else if (r.t === "note") onStoryNote?.(r.text);
         else if (r.t === "duration") {
             onDurationAnswer?.(r.complaint, r.choice.days);
             setHistory((h) => [...h, { kind: "duration", label: r.complaint }]);
@@ -801,6 +990,12 @@ export function ClinicalCommandBar({
         // does the same thing for anyone who expects it to; both stop at the
         // last open question rather than wrapping, so a clinician cannot skip
         // in a circle.
+        if (empty && siteSlot && (e.key === " " || e.key === "Tab")) {
+            e.preventDefault();
+            skipSite();
+            return;
+        }
+
         if (empty && storyOn && slot && (e.key === " " || e.key === "Tab")) {
             e.preventDefault();
             skipSlot();
@@ -852,7 +1047,9 @@ export function ClinicalCommandBar({
             if (pick) take(pick);
         } else if (e.key === "Escape") {
             e.preventDefault();
-            if (query.trim()) setQuery(""); else inputRef.current?.blur();
+            if (query.trim()) setQuery("");
+            else if (siteSlot) skipSite();
+            else inputRef.current?.blur();
         }
     };
 
@@ -869,10 +1066,12 @@ export function ClinicalCommandBar({
                 {/* The prompt list says WHY it is offering these, because
                     otherwise a list that appears on focus reads as a search
                     result for a query nobody typed. */}
-                {showPrompts && (slot || durationSlot) && (
+                {showPrompts && (slot || durationSlot || siteSlot) && (
                     <p className="flex items-center justify-between gap-2 border-b border-[var(--cs-line)] px-3 pb-1.5 pt-2">
                         <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--cs-label)]">
-                            {slot ? DIMENSION_PROMPT[slot] : `${durationSlot} — how long?`}
+                            {siteSlot ? (
+                                <span className="text-[var(--cs-teal)]">{siteSlot} — where?</span>
+                            ) : slot ? DIMENSION_PROMPT[slot] : `${durationSlot} — how long?`}
                         </span>
                         {/* The skip is stated where the clinician is looking —
                             a key that is only discoverable by being told is a
@@ -897,7 +1096,9 @@ export function ClinicalCommandBar({
                         const label = r.t === "obs" ? r.o.label
                             : r.t === "template" ? r.tpl.name
                                 : r.t === "duration" ? r.choice.label
-                                    : r.it.label;
+                                    : r.t === "site" ? r.hit.label
+                                        : r.t === "note" ? r.text
+                                            : r.it.label;
                         return (
                             <button
                                 key={r.key}
@@ -948,15 +1149,42 @@ export function ClinicalCommandBar({
                                         ? "bg-[var(--cs-blue-soft)] "
                                         : r.t === "template" ? "bg-[#faf8ff] " : "") +
                                     (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] " : "") +
-                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "")
+                                    (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "") +
+                                    (r.t === "site" ? "border-l-2 border-l-[var(--cs-teal)] " : "") +
+                                    (r.t === "note" ? "border-l-2 border-l-[#a855f7] " : "")
                                 }
                             >
-                                <span className="min-w-0 flex-1 truncate">
+                                {r.t === "site" && (
+                                    <MapPin size={13} aria-hidden="true" className="flex-none text-[var(--cs-teal)]" />
+                                )}
+                                {r.t === "note" && (
+                                    <PenLine size={13} aria-hidden="true" className="flex-none text-[#9333ea]" />
+                                )}
+                                <span className={"min-w-0 flex-1 truncate" + (r.t === "site" ? " font-semibold" : "")}>
                                     {on && <span aria-hidden="true">✓ </span>}
-                                    {label}
+                                    {r.t === "note" && (
+                                        <span className="mr-1 text-[12px] font-semibold text-[#7e22ce]">Add to story</span>
+                                    )}
+                                    {r.t === "note" ? <span className="text-[var(--cs-ink)]">“{label}”</span> : label}
                                     {r.t === "template" && (
                                         <span className="ml-1.5 text-[11px] font-normal text-[var(--cs-faint)]">
                                             {r.tpl.itemCount} item{r.tpl.itemCount === 1 ? "" : "s"}
+                                        </span>
+                                    )}
+                                    {/* Says why a lowered match is lowered —
+                                        "Swelling in legs · cardiovascular" —
+                                        so it is never mistaken for the local
+                                        swelling above it. */}
+                                    {/* Why this place leads — the visit already
+                                        has it, or the complaint names it. */}
+                                    {r.t === "site" && r.hit.why && (
+                                        <span className="ml-1.5 text-[11px] font-medium text-[var(--cs-faint)]">
+                                            {r.hit.why === "visit" ? "· in this visit" : "· from the complaint"}
+                                        </span>
+                                    )}
+                                    {r.t === "obs" && isOffSpecialty(r.o, preferSystems, preferDomain) && (
+                                        <span className="ml-1.5 text-[11px] font-medium text-[var(--cs-faint)]">
+                                            · {r.o.system}
                                         </span>
                                     )}
                                 </span>
@@ -972,13 +1200,17 @@ export function ClinicalCommandBar({
                                         "flex-none rounded-[5px] px-[7px] py-[2px] text-[11px] font-semibold " +
                                         (r.t === "obs" ? TONE[r.o.kind].badge
                                             : r.t === "template" ? "bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
-                                                : "bg-[#eaf0fb] text-[#2c4a7c]")
+                                                : r.t === "site" ? "bg-[#dbf4eb] text-[#0b6a62]"
+                                                    : r.t === "note" ? "bg-[#f3e8ff] text-[#7e22ce]"
+                                                        : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
                                     {r.t === "obs" ? KIND_BADGE[r.o.kind]
                                         : r.t === "template" ? "Template"
                                             : r.t === "duration" ? "duration"
-                                                : r.it.dimension.toLowerCase()}
+                                                : r.t === "site" ? "where"
+                                                    : r.t === "note" ? "story"
+                                                        : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );
@@ -1008,7 +1240,14 @@ export function ClinicalCommandBar({
             <div
                 ref={boxRef}
                 onClick={() => inputRef.current?.focus()}
-                className="flex min-h-[38px] cursor-text items-center gap-2 overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]"
+                className={
+                    "flex min-h-[38px] cursor-text items-center gap-2 overflow-hidden rounded-[var(--cs-radius)] border border-[var(--cs-line-strong)] bg-white px-3 shadow-[0_1px_2px_rgba(16,28,46,0.04)] transition-[border-color,box-shadow] duration-150 " +
+                    // Teal while a place is being asked — the finding's own
+                    // colour, so the box visibly belongs to that question.
+                    (siteSlot
+                        ? "focus-within:border-[rgba(15,118,110,0.55)] focus-within:shadow-[0_0_0_3px_rgba(15,118,110,0.12)]"
+                        : "focus-within:border-[rgba(18,104,232,0.5)] focus-within:shadow-[0_0_0_3px_rgba(18,104,232,0.1)]")
+                }
             >
                 <Search size={15} className="flex-none text-[var(--cs-faint)]" />
 
@@ -1062,8 +1301,9 @@ export function ClinicalCommandBar({
                         onFocus={() => setFocused(true)}
                         onBlur={() => setFocused(false)}
                         placeholder={
-                            durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
-                                : !storyOn ? "Add clinical information (symptoms, findings, history…)"
+                            siteSlot ? `Where is it? Type a place, e.g. kn or lower back. Space to skip`
+                            : durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
+                                : !storyOn ? (onStoryNote ? "Add symptoms, findings, history, or type what happened…" : "Add clinical information (symptoms, findings, history…)")
                                 : !leadComplaint ? "What happened? Start with the complaint…"
                                     // A slot names the question in the pill beside the
                                     // caret, so a placeholder would only repeat it.
@@ -1074,7 +1314,7 @@ export function ClinicalCommandBar({
                                         : "Add a symptom, finding or measurement…"
                         }
                         aria-label="Add clinical information"
-                        className="min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
+                        className="cx-bar-input min-w-[9rem] flex-1 border-0 bg-transparent p-0 text-[13.5px] font-medium text-[var(--cs-ink)] outline-none placeholder:font-normal placeholder:text-[var(--cs-faint)]"
                     />
 
                     {Boolean(query) && !disabled && (
@@ -1113,6 +1353,31 @@ export function ClinicalCommandBar({
                     alike. Rendered only when a duration is actually open;
                     General OPD with nothing to ask is exactly the bar it has
                     always been. */}
+                {/* The where-slot's controls — the same pill and Skip as
+                    "how long", in the finding's teal, naming WHAT is being
+                    placed so the question is never ambiguous. */}
+                {siteSlot && (
+                    <span className="flex flex-none items-center gap-1.5 pl-1">
+                        <span
+                            title={`Where is the ${siteSlot.toLowerCase()}?`}
+                            className="hidden max-w-[15rem] items-center gap-1 rounded-md border border-[#a4e3d1] bg-[linear-gradient(180deg,#f4fdfa_0%,#dbf4eb_100%)] px-2 py-[3px] text-[11px] font-semibold text-[#0b6a62] sm:inline-flex"
+                        >
+                            <MapPin size={11} aria-hidden="true" className="flex-none" />
+                            <span className="truncate">{siteSlot}</span>
+                            <span className="flex-none font-bold">· where?</span>
+                        </span>
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onMouseDown={(e) => { e.preventDefault(); skipSite(); }}
+                            title="Skip — leave it without a place (Space)"
+                            className="rounded-md border border-[var(--cs-line-strong)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-faint)] hover:border-[var(--cs-teal)] hover:text-[var(--cs-teal)]"
+                        >
+                            Skip
+                        </button>
+                    </span>
+                )}
+
                 {durationSlot && (
                     <span className="flex flex-none items-center gap-1.5 pl-1">
                         <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
@@ -1141,7 +1406,7 @@ export function ClinicalCommandBar({
                     </span>
                 )}
 
-                {storyOn && leadComplaint && (
+                {storyOn && leadComplaint && !siteSlot && (
                     <span className="flex flex-none items-center gap-1.5 pl-1">
                         {slot && (
                             <span className="hidden items-center gap-1 rounded-md bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[11px] font-semibold text-[var(--cs-blue)] sm:inline-flex">
@@ -1380,6 +1645,257 @@ function RetireMenu({ label, onPick, onDismiss }: {
     );
 }
 
+/**
+ * "Previous MI — since when?" A single free-text field, save or skip. Same
+ * popover shell as `RetireMenu` deliberately — one small-popup idiom on this
+ * card, not two — but its own component: the question and the one control
+ * are nothing like a 3-option menu.
+ *
+ * Cardiac History enrichment, Project Pulse Point (2026-09-21): "type
+ * previous MI, it will ask from when, which will be obviously loosey, it
+ * will not force. You can skip from when if you don't know." (Anmol) — the
+ * input is plain text (a year is plenty — "2019", not a date picker), Enter
+ * or Save records it, Escape/Skip dismisses with nothing written.
+ */
+function OnsetPrompt({ label, onSave, onDismiss }: {
+    label: string;
+    onSave: (note: string) => void;
+    onDismiss: () => void;
+}) {
+    const [value, setValue] = useState("");
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        inputRef.current?.focus();
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onDismiss(); };
+        const onDown = (e: MouseEvent) => {
+            if (!ref.current?.contains(e.target as Node)) onDismiss();
+        };
+        window.addEventListener("keydown", onKey);
+        const t = window.setTimeout(() => window.addEventListener("mousedown", onDown), 0);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            window.removeEventListener("mousedown", onDown);
+            window.clearTimeout(t);
+        };
+    }, [onDismiss]);
+
+    const save = () => {
+        const trimmed = value.trim();
+        if (trimmed) onSave(trimmed);
+        else onDismiss();
+    };
+
+    return (
+        <div
+            ref={ref}
+            className="cx-retire absolute left-0 top-[calc(100%+6px)] z-50 w-[220px] rounded-[10px] border border-[var(--cs-line-strong)] bg-white p-2 shadow-[0_12px_28px_rgba(16,28,46,0.16)]"
+            role="dialog"
+            aria-label={`Since when — ${label}`}
+        >
+            <p className="m-0 px-0.5 pb-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--cs-faint)]">
+                Since when? <span className="normal-case font-medium">(optional)</span>
+            </p>
+            <input
+                ref={inputRef}
+                type="text"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+                placeholder="e.g. 2019"
+                className="w-full rounded-[7px] border border-[var(--cs-line-strong)] px-2 py-[6px] text-[12.5px] font-medium text-[var(--cs-ink)] outline-none focus:border-[var(--cs-blue)]"
+            />
+            <div className="mt-1.5 flex justify-end gap-1.5">
+                <button
+                    type="button"
+                    onClick={onDismiss}
+                    className="rounded-[6px] px-2 py-[5px] text-[11.5px] font-semibold text-[var(--cs-faint)] hover:bg-black/5"
+                >
+                    Skip
+                </button>
+                <button
+                    type="button"
+                    onClick={save}
+                    className="rounded-[6px] bg-[var(--cs-blue)] px-2.5 py-[5px] text-[11.5px] font-semibold text-white hover:opacity-90"
+                >
+                    Save
+                </button>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * "Where?" for a local finding — swelling, tenderness, a bruise — asked on
+ * the chip itself, the same small popover shape as `OnsetPrompt`.
+ *
+ * The places already established in this visit come first as one-click
+ * chips (tick one, or several: swelling of both knees); anything else is
+ * typed ("left wr…"), from the same site list the anatomy picker uses, so a
+ * finding's "Right knee" and a fracture's "Right knee" are one string.
+ * Every tick applies at once; Done only closes. Optional, like every
+ * qualifier on a chip: dismissing it leaves the finding bare, as before.
+ */
+const SITE_POP_W = 264;
+
+function FindingSitePrompt({ label, anchor, sites, known, onChange, onDismiss }: {
+    label: string;
+    /** the chip's own "where" control — the popover hangs under it */
+    anchor: HTMLElement | null;
+    sites: SiteRef[];
+    known: SiteRef[];
+    onChange: (sites: SiteRef[]) => void;
+    onDismiss: () => void;
+}) {
+    const [query, setQuery] = useState("");
+    const [active, setActive] = useState(0);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Portalled and fixed, so no card's overflow can crop it or scroll
+    // sideways to make room: under its chip, kept inside the window, and
+    // above the chip instead when there is no room below.
+    useLayoutEffect(() => {
+        if (!anchor) return;
+        const place = () => {
+            const r = anchor.getBoundingClientRect();
+            const h = ref.current?.offsetHeight ?? 220;
+            const left = Math.max(8, Math.min(r.left, window.innerWidth - SITE_POP_W - 8));
+            const below = r.bottom + 6;
+            const top = below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below;
+            setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }));
+        };
+        place();
+        window.addEventListener("resize", place);
+        window.addEventListener("scroll", place, true);
+        return () => {
+            window.removeEventListener("resize", place);
+            window.removeEventListener("scroll", place, true);
+        };
+    });
+
+    useEffect(() => {
+        // With places to tick, the chips are the answer and the input waits;
+        // with none, typing is the only way, so it takes focus.
+        if (!known.length) inputRef.current?.focus();
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onDismiss(); };
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node;
+            // The chip's own control toggles it; closing here too would
+            // reopen it on the same click.
+            if (ref.current?.contains(t) || anchor?.contains(t)) return;
+            onDismiss();
+        };
+        window.addEventListener("keydown", onKey);
+        const t = window.setTimeout(() => window.addEventListener("mousedown", onDown), 0);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            window.removeEventListener("mousedown", onDown);
+            window.clearTimeout(t);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onDismiss, anchor]);
+
+    // This visit's places, then any place this finding already has that is
+    // not one of them — so every current place is visible and un-tickable.
+    const choices = useMemo(() => {
+        const out: SiteRef[] = [];
+        for (const s of [...known, ...sites]) if (!out.some((k) => sameSite(k, s))) out.push(s);
+        return out;
+    }, [known, sites]);
+
+    // Same forgiving search as the command bar's where-slot ("rt kn").
+    const options = useMemo(() => searchSites(query, known, [], 6), [query, known]);
+    useEffect(() => { setActive(0); }, [query]);
+
+    const isOn = (x: SiteRef) => sites.some((s) => sameSite(s, x));
+    const toggle = (x: SiteRef) => onChange(isOn(x) ? sites.filter((s) => !sameSite(s, x)) : [...sites, x]);
+    const add = (x: SiteRef) => {
+        if (!isOn(x)) onChange([...sites, x]);
+        setQuery("");
+    };
+
+    return createPortal(
+        <div
+            ref={ref}
+            className="cx-site-pop"
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: SITE_POP_W }}
+            role="dialog"
+            aria-label={`Where: ${label}`}
+        >
+            <p className="cx-site-pop-head">
+                Where? <span>(optional)</span>
+            </p>
+            {choices.length > 0 && (
+                <div className="cx-site-pop-chips" role="group" aria-label="Places in this visit">
+                    {choices.map((k) => (
+                        <button
+                            key={clinicalSiteLabel(k)}
+                            type="button"
+                            aria-pressed={isOn(k)}
+                            className={`cx-site-pop-chip${isOn(k) ? " is-on" : ""}`}
+                            onClick={() => toggle(k)}
+                        >
+                            {isOn(k) && <Check size={12} aria-hidden="true" />}
+                            {clinicalSiteLabel(k)}
+                        </button>
+                    ))}
+                </div>
+            )}
+            <div className="cs-anat-search">
+                <input
+                    ref={inputRef}
+                    className="cs-anat-input cx-site-pop-input"
+                    value={query}
+                    placeholder={choices.length ? "Another place, e.g. left wrist" : "Type a place, e.g. right knee"}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                            if (options.length) add(options[active].site);
+                            else if (!query.trim()) onDismiss();
+                            return;
+                        }
+                        if (!options.length) return;
+                        if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, options.length - 1)); }
+                        else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+                    }}
+                />
+                {options.length > 0 && (
+                    <div className="cs-anat-results" role="listbox">
+                        {options.map((o, i) => (
+                            <button
+                                key={o.label}
+                                type="button"
+                                role="option"
+                                aria-selected={i === active}
+                                className={`cs-anat-result${i === active ? " is-active" : ""}`}
+                                onMouseEnter={() => setActive(i)}
+                                onClick={() => add(o.site)}
+                            >
+                                {o.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <div className="cx-site-pop-foot">
+                {sites.length > 0 && (
+                    <button type="button" className="cx-site-pop-clear" onClick={() => onChange([])}>
+                        Clear
+                    </button>
+                )}
+                <button type="button" className="cx-site-pop-done" onClick={onDismiss}>
+                    Done
+                </button>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
 interface SheetProps {
     entries: CaseSheetEntry[];
     onRemove: (label: string) => void;
@@ -1392,6 +1908,40 @@ interface SheetProps {
      * removal means. See `RetireMenu`.
      */
     onRetireCarried?: (label: string, status: "resolved" | "refuted") => void;
+    /**
+     * Labels worth asking "since when" — the curated, detail-worthy subset of
+     * chronic history (Previous MI, PCI, CABG, pacemaker, ICD — see
+     * `conditionDetail.ts`). Absent/empty means the "+ since when" affordance
+     * never renders, same optional-prop-off-by-default pattern `onRetireCarried`
+     * uses.
+     */
+    detailWorthyLabels?: Set<string>;
+    /** Records the free-text onset answer from `OnsetPrompt`. */
+    onSetOnsetNote?: (label: string, note: string) => void;
+    /**
+     * Open `OnsetPrompt` for this label the instant it renders, no click
+     * needed — the command bar sets this the moment a detail-worthy history
+     * observable is picked from SEARCH (`GeneralOpdInputs.tsx`'s
+     * `handleCommandBarToggle`), so "type Previous MI, get asked since when"
+     * happens in one motion instead of a pick now and a second click later.
+     * A chip ticked any other way (Related, the browse sheet, CaseSheet's
+     * own "+ since" button) is unaffected — this only fires for a fresh
+     * search pick. Cleared via `onAutoOpenOnsetHandled` once consumed, so it
+     * never reopens on an unrelated re-render.
+     */
+    autoOpenOnsetLabel?: string | null;
+    onAutoOpenOnsetHandled?: () => void;
+    /**
+     * Sited findings (2026-09-25). The places established in this visit,
+     * offered first in a local finding's "Where?" popover, and the way to
+     * record its answer. Absent, a local finding renders exactly as before.
+     */
+    knownSites?: SiteRef[];
+    onSetFindingSites?: (label: string, sites: SiteRef[]) => void;
+    /** Open "Where?" on this chip as it lands — set when the visit already
+     *  has two or more places and the doctor has to say which. */
+    autoOpenSiteLabel?: string | null;
+    onAutoOpenSiteHandled?: () => void;
     onToggle: (o: Observable) => void;
     intensities: SelectedSymptom[];
     onIntensityChange: (label: string, intensity: SelectedSymptom["intensity"]) => void;
@@ -1422,6 +1972,10 @@ interface SheetProps {
     /** the story itself, for the sentence — see the Story row */
     story?: Story;
     onStoryRemove?: (it: StorySearchItem) => void;
+    /** free-text story typed into the bar ("Fell from bike yesterday"), one
+     *  sentence each, closing the Story row; see BarProps.onStoryNote */
+    storyNotes?: string[];
+    onStoryNoteRemove?: (index: number) => void;
     /**
      * Lands focus in the command bar's search input — the empty sheet's own
      * "+" (2026-08-28). `ClinicalCommandBar` and `CaseSheet` are siblings on
@@ -1436,10 +1990,38 @@ interface SheetProps {
 export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
-    storyChips = [], story: storyOf, onStoryRemove, onFocusSearch,
+    storyChips = [], story: storyOf, onStoryRemove, storyNotes = [], onStoryNoteRemove, onFocusSearch,
+    detailWorthyLabels, onSetOnsetNote, autoOpenOnsetLabel, onAutoOpenOnsetHandled,
+    knownSites = [], onSetFindingSites, autoOpenSiteLabel, onAutoOpenSiteHandled,
 }: SheetProps) {
     /** which carried-forward chip is asking what its removal means */
     const [retiring, setRetiring] = useState<string | null>(null);
+    /** which chip's "since when" popover is open */
+    const [editingOnset, setEditingOnset] = useState<string | null>(null);
+    /** which local finding's "Where?" popover is open */
+    const [editingSite, setEditingSite] = useState<string | null>(null);
+    const closeSite = useCallback(() => setEditingSite(null), []);
+    /** each local finding's "where" control, for its popover to hang under */
+    const siteAnchors = useRef(new Map<string, HTMLElement>());
+    const siteAnchorRef = (label: string) => (el: HTMLElement | null) => {
+        if (el) siteAnchors.current.set(label, el);
+        else siteAnchors.current.delete(label);
+    };
+
+    useEffect(() => {
+        if (!autoOpenSiteLabel) return;
+        setEditingSite(autoOpenSiteLabel);
+        onAutoOpenSiteHandled?.();
+    }, [autoOpenSiteLabel, onAutoOpenSiteHandled]);
+
+    // See `autoOpenOnsetLabel`'s own doc comment — a fresh search pick opens
+    // this without waiting for the doctor to find and click "+ since" on the
+    // chip that pick just created.
+    useEffect(() => {
+        if (!autoOpenOnsetLabel) return;
+        setEditingOnset(autoOpenOnsetLabel);
+        onAutoOpenOnsetHandled?.();
+    }, [autoOpenOnsetLabel, onAutoOpenOnsetHandled]);
 
     const reduce = useReducedMotion();
 
@@ -1513,15 +2095,15 @@ export function CaseSheet({
                     Case Sheet
                 </h2>
                 <AnimatePresence>
-                    {entries.length + storyChips.length > 0 && (
+                    {entries.length + storyChips.length + storyNotes.length > 0 && (
                         <motion.span
-                            key={entries.length + storyChips.length}
+                            key={entries.length + storyChips.length + storyNotes.length}
                             initial={reduce ? false : { opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={popEase}
                             className="ml-auto flex-none rounded-[7px] bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[12.5px] font-semibold text-[var(--cs-blue)]"
                         >
-                            {entries.length + storyChips.length} recorded
+                            {entries.length + storyChips.length + storyNotes.length} recorded
                         </motion.span>
                     )}
                 </AnimatePresence>
@@ -1532,7 +2114,7 @@ export function CaseSheet({
                 the card "showed its shape", which only produced three rows of
                 grey saying nothing. Nothing has been recorded, so the card
                 should look like nothing has been recorded. */}
-            {entries.length === 0 && storyChips.length === 0 && (
+            {entries.length === 0 && storyChips.length === 0 && storyNotes.length === 0 && (
                 <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-4 text-center">
                     {/* The drawing stays exactly as it was — only a small "+"
                         rides its corner now (2026-08-28), a real affordance
@@ -1593,7 +2175,7 @@ export function CaseSheet({
                 individually removable — hover reveals its ×, and the clause
                 greys under the cursor so it is obvious what is about to go —
                 but removal is the secondary act here. Reading is the point. */}
-            {storyChips.length > 0 && (
+            {storyChips.length + storyNotes.length > 0 && (
                 <div className="mt-2 flex items-start gap-2.5 px-4 py-[3px]">
                     <span className="w-[9.5em] flex-none whitespace-nowrap pt-[3px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
                         Story
@@ -1604,7 +2186,7 @@ export function CaseSheet({
                         instead of wrapping. `break-words` covers the one case
                         min-w-0 cannot — a single clause longer than the column. */}
                     <p className="m-0 min-w-0 flex-1 break-words text-[13.5px] font-medium leading-[1.6] text-[var(--cs-ink)]">
-                        {leadComplaint && (
+                        {leadComplaint && storyClauseList.length > 0 && (
                             <span className="font-bold">{leadComplaint}</span>
                         )}
                         {storyClauseList.map((c, i) => (
@@ -1629,6 +2211,28 @@ export function CaseSheet({
                                     aria-label={`Remove ${c.item.label}`}
                                     disabled={disabled}
                                     onClick={() => onStoryRemove?.(c.item)}
+                                    className="ml-[2px] hidden align-middle text-[var(--cs-faint)] hover:text-[var(--cs-rose)] focus-visible:inline group-hover/clause:inline"
+                                >
+                                    <X size={11} className="inline" />
+                                </button>
+                            </span>
+                        ))}
+                        {/* Free text typed into the bar, each its own
+                            sentence after the structured clauses, removable
+                            the same way. */}
+                        {storyClauseList.length > 0 && storyNotes.length > 0 && (
+                            <span className="mr-[1px] text-[var(--cs-faint)]">.</span>
+                        )}
+                        {storyNotes.map((n, i) => (
+                            <span key={`note-${i}`} className={"group/clause" + (i > 0 ? " ml-[3px]" : "")}>
+                                <span className="rounded-[4px] px-[2px] transition-colors group-hover/clause:bg-[var(--cs-rose-soft)] group-hover/clause:text-[var(--cs-rose)]">
+                                    {/[.!?]$/.test(n) ? n : `${n}.`}
+                                </span>
+                                <button
+                                    type="button"
+                                    aria-label={`Remove "${n}"`}
+                                    disabled={disabled}
+                                    onClick={() => onStoryNoteRemove?.(i)}
                                     className="ml-[2px] hidden align-middle text-[var(--cs-faint)] hover:text-[var(--cs-rose)] focus-visible:inline group-hover/clause:inline"
                                 >
                                     <X size={11} className="inline" />
@@ -1731,6 +2335,75 @@ export function CaseSheet({
                                                 >
                                                     {shortDuration(entry.durationDays)}
                                                 </span>
+                                            )}
+                                            {entry.onsetNote && (
+                                                <span
+                                                    title={`Since ${entry.onsetNote}`}
+                                                    className="rounded-[5px] bg-black/[0.07] px-[4px] py-[1px] text-[10.5px] font-bold leading-none opacity-80"
+                                                >
+                                                    · {entry.onsetNote}
+                                                </span>
+                                            )}
+                                            {!entry.onsetNote && detailWorthyLabels?.has(entry.label) && onSetOnsetNote && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingOnset((c) => (c === entry.label ? null : entry.label))}
+                                                    title="Add when this happened"
+                                                    aria-haspopup="dialog"
+                                                    aria-expanded={editingOnset === entry.label}
+                                                    className="rounded-[5px] border border-dashed border-current px-[4px] py-[1px] text-[10.5px] font-bold leading-none opacity-55 hover:opacity-90"
+                                                >
+                                                    + since
+                                                </button>
+                                            )}
+                                            {entry.localizable && onSetFindingSites && (entry.sites?.length ? (
+                                                /* Where it was found, on the chip that owns it — a
+                                                   qualifier like the duration, and like it, changed
+                                                   by clicking it. */
+                                                <button
+                                                    ref={siteAnchorRef(entry.label)}
+                                                    type="button"
+                                                    onClick={() => setEditingSite((c) => (c === entry.label ? null : entry.label))}
+                                                    title={`Found at: ${entry.sites.map(clinicalSiteLabel).join(", ")}. Click to change.`}
+                                                    aria-haspopup="dialog"
+                                                    aria-expanded={editingSite === entry.label}
+                                                    className="rounded-[5px] border-0 bg-black/[0.07] px-[5px] py-[2px] text-[11px] font-bold leading-none text-current opacity-85 hover:bg-black/[0.12] hover:opacity-100"
+                                                >
+                                                    {clinicalSiteLabel(entry.sites[0])}
+                                                    {entry.sites.length > 1 && ` +${entry.sites.length - 1}`}
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    ref={siteAnchorRef(entry.label)}
+                                                    type="button"
+                                                    onClick={() => setEditingSite((c) => (c === entry.label ? null : entry.label))}
+                                                    title="Add where this was found"
+                                                    aria-haspopup="dialog"
+                                                    aria-expanded={editingSite === entry.label}
+                                                    className="rounded-[5px] border border-dashed border-current bg-transparent px-[4px] py-[1px] text-[10.5px] font-bold leading-none text-current opacity-55 hover:opacity-90"
+                                                >
+                                                    + where
+                                                </button>
+                                            ))}
+                                            {editingSite === entry.label && onSetFindingSites && (
+                                                <FindingSitePrompt
+                                                    label={entry.label}
+                                                    anchor={siteAnchors.current.get(entry.label) ?? null}
+                                                    sites={entry.sites ?? []}
+                                                    known={knownSites}
+                                                    onChange={(next) => onSetFindingSites(entry.label, next)}
+                                                    onDismiss={closeSite}
+                                                />
+                                            )}
+                                            {editingOnset === entry.label && onSetOnsetNote && (
+                                                <OnsetPrompt
+                                                    label={entry.label}
+                                                    onDismiss={() => setEditingOnset(null)}
+                                                    onSave={(note) => {
+                                                        setEditingOnset(null);
+                                                        onSetOnsetNote(entry.label, note);
+                                                    }}
+                                                />
                                             )}
                                             <button
                                                 type="button"

@@ -231,9 +231,14 @@
     border-radius: 2px;
 }
 
-/* Right column — operational panel, fixed width, scrolls independently */
+/* Right column — operational panel, fixed width, scrolls independently.
+   Widened from 304 to 340 (2026-09-20) so Care Plan/Visit Pattern can pair
+   side by side (`.prec-panel-pair` below) without cramming — this sidebar
+   reading as its own small grid, not one narrow stacked strip, is the same
+   "more than a single column" ask that landed on the page's overall shape
+   (Anmol: "we can make it kind of three grid or maybe even more better"). */
 .prec-right-col {
-    width: 304px;
+    width: 340px;
     flex-shrink: 0;
     border-left: 1px solid #d0d8e8;
     background: #f7f8fc;
@@ -260,6 +265,18 @@
 
 .prec-panel-section:last-child {
     margin-bottom: 0;
+}
+
+/* Two compact cards side by side instead of stacked — Care Plan + Visit
+   Pattern, the only pair in this sidebar short enough to share a row
+   without a bar-list's rows getting squeezed. `.prec-panel-pair` itself
+   carries the section's own bottom margin; the two `.prec-panel-card`s
+   inside it lose the standalone card's implicit vertical rhythm since
+   `align-items: stretch` (grid default) already matches their heights. */
+.prec-panel-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
 }
 
 /* Section card — white card on panel ground */
@@ -307,6 +324,45 @@
 
 .prec-panel-card-body {
     padding: 12px 14px;
+}
+
+/* A sidebar card's own compact empty state (`PanelEmpty` in
+   PatientRecord.tsx) — Care Plan / Frequent Complaints / Common Medicines /
+   Visit Pattern used to fall back to a bare one-line sentence the instant a
+   patient had nothing to show, which read as broken next to the rest of the
+   page's illustrated empty states (Anmol, 2026-09-20: "so much crammed
+   small text... so much stressed out section"). This column is only 304px
+   wide, so a full illustrated well isn't the fix — a 30px tint circle
+   carrying that CARD'S OWN header icon (never a new mark) gives the row
+   enough presence to read as designed rather than unstyled, at a size four
+   of these can stack without turning the sidebar into a wall of wells. */
+.prec-panel-empty {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 0;
+}
+
+.prec-panel-empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.prec-panel-empty-icon.is-blue { background: #eaf1fd; color: #1268e8; }
+.prec-panel-empty-icon.is-green { background: #eafbf1; color: #16a34a; }
+.prec-panel-empty-icon.is-pink { background: #fdedf5; color: #db2777; }
+.prec-panel-empty-icon.is-violet { background: #f5f3ff; color: #7c3aed; }
+
+.prec-panel-empty-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    line-height: 1.4;
 }
 
 /* ── Today's Summary grid ──────────────────────────────────────────────────── */

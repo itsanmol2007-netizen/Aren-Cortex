@@ -27,8 +27,10 @@
 // and inventing that distinction for physiotherapy alone, while every other
 // specialty's chips stay side-agnostic, would be a new axis this one screen
 // invented rather than a rule the product already has. So a chip toggle
-// carries no side. The "Mark site" action below the chips still records
-// which side was clicked — into the same `visit_body_sites` row the
+// carries no side. The site itself is still recorded, once, with its side
+// (2026-09-26: automatically, the moment anything is recorded there; the
+// old "Mark site" button inserted a duplicate row) — into the same
+// `visit_body_sites` row the
 // dermatology card writes, now with physio's joints added to the region
 // list (2026-08-17 migration) — because a physio's OWN note, and a future
 // reader of the chart, still needs to know it was the right knee. That is
@@ -51,15 +53,24 @@
 // with no chips at all would read as broken.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MapPin, PersonStanding, Loader2, Trash2, X, Maximize2 } from "lucide-react";
 import { ChartSurface } from "./ChartSurface";
-import { listBodySites, addBodySite, deleteBodySite } from "../../lib/db/bodySites";
+import { listBodySites, addBodySite, deleteBodySite, updateBodySiteNote } from "../../lib/db/bodySites";
 import type { BodySiteFinding } from "../../lib/db/bodySites";
+import { searchIntents, type IntentSearchHit } from "../../lib/db/synapse";
+import type { AssessmentLine } from "./assessmentPlan";
+import { familyFor, siteAllowed, type AssessmentDetails } from "./assessmentFamilies";
+import type { AcceptPayload } from "./types";
+import type { SiteAssessmentApi } from "./JointFindingField";
 import { BODY_ZONES, FIGURE_VIEWBOX, regionLabel, siteLabel } from "../../lib/body/anatomy";
 import type { BodyAspect, BodyRegion, BodySide } from "../../lib/body/anatomy";
 import type { Observable } from "../../lib/db/synapse";
 import type { CaseSheetEntry } from "./CaseSheet";
+import { clinicalSiteLabel, isMidline, normalizeSite, sameSite, siteKey, type SiteRef } from "../../lib/body/clinicalSite";
+import { regionChips } from "./regionFindings";
+import { JointFindingField } from "./JointFindingField";
+import { NeurovascularCheck, NV_CHECKS, NV_REGIONS, nvKey } from "./NeurovascularCheck";
 import { RegionExam, examCounts } from "./ExaminationCard";
 import { REGION_BY_KEY } from "./examination";
 import type { ExaminationHook } from "../../hooks/useExamination";
@@ -101,13 +112,6 @@ function jointPainChip(region: BodyRegion, aspect: BodyAspect): string | null {
     }
 }
 
-/** Not joint-specific — offered for every zone. */
-const GENERIC_FINDING_LABELS = [
-    "Restricted range of motion",
-    "Joint swelling / effusion",
-    "Joint stiffness",
-    "Joint gives way",
-];
 
 interface Props {
     visitId: string | null;
@@ -115,6 +119,12 @@ interface Props {
     observables: Observable[];
     caseSheetEntries: CaseSheetEntry[];
     onObservableToggle: (o: Observable) => void;
+    /**
+     * A local finding clicked here is found HERE: "Joint swelling / effusion"
+     * on the right knee's panel is the right knee's swelling (sited findings,
+     * 2026-09-25). Optional; without it every chip toggles bare, as before.
+     */
+    onObservableToggleAt?: (o: Observable, site: SiteRef) => void;
     presentation?: "card" | "modal";
     open?: boolean;
     onClose?: () => void;
@@ -129,8 +139,32 @@ interface Props {
      * of 95 degrees can never again be recorded without saying which knee.
      */
     examination?: ExaminationHook;
+    /**
+     * Assessments made at a site from its panel (2026-09-26): the body map
+     * can do what the command bar and the Assessment card do. Optional; a
+     * caller without them gets findings and examination only.
+     */
+    assessmentLines?: AssessmentLine[];
+    onAddAssessmentAt?: (payload: AcceptPayload, site: SiteRef) => string | null;
+    onAssessmentDetails?: (id: string, details: AssessmentDetails) => void;
+    /** takes the line's text, as the Assessment card's own remove does */
+    onRemoveAssessment?: (text: string) => void;
+    /** the catalogue search; injectable for tests, `searchIntents` otherwise */
+    searchAssessments?: (query: string) => Promise<IntentSearchHit[]>;
+    /**
+     * "Not in the list" (2026-09-27): typed words recorded at the site as a
+     * new finding / complaint (the clinic's own catalogue term) or as the
+     * doctor's own assessment, remembered for next time. Absent: no rows.
+     */
+    onAddCustomFindingAt?: (label: string, kind: "symptom" | "finding", site: SiteRef) => Promise<string | null>;
+    onAddCustomAssessmentAt?: (label: string, site: SiteRef) => string | null;
+    /** the doctor's remembered assessments, searched in the field */
+    ownAssessmentTerms?: string[];
     disabled?: boolean;
 }
+
+const searchFindingIntents = (query: string) =>
+    searchIntents({ query, types: ["finding"], limit: 24 }).then((r) => r.hits);
 
 interface Selection {
     region: BodyRegion;
@@ -138,8 +172,11 @@ interface Selection {
 }
 
 export function JointMapCard({
-    visitId, doctorId, observables, caseSheetEntries, onObservableToggle,
+    visitId, doctorId, observables, caseSheetEntries, onObservableToggle, onObservableToggleAt,
     presentation = "card", open = false, onClose, examination, disabled = false,
+    assessmentLines, onAddAssessmentAt, onAssessmentDetails, onRemoveAssessment,
+    searchAssessments = searchFindingIntents,
+    onAddCustomFindingAt, onAddCustomAssessmentAt, ownAssessmentTerms,
 }: Props) {
     const [items, setItems] = useState<BodySiteFinding[]>([]);
     const [aspect, setAspect] = useState<BodyAspect>("front");
@@ -161,7 +198,6 @@ export function JointMapCard({
     }, [visitId]);
 
     useEffect(() => { setSel(null); }, [aspect]);
-    useEffect(() => { setNote(""); }, [sel?.region, sel?.side]);
 
     const byLabel = useMemo(() => {
         const m = new Map<string, Observable>();
@@ -173,92 +209,188 @@ export function JointMapCard({
         () => new Set(caseSheetEntries.map((e) => e.label)),
         [caseSheetEntries]
     );
+    const sitesByLabel = useMemo(
+        () => new Map(caseSheetEntries.map((e) => [e.label, e.sites ?? []] as const)),
+        [caseSheetEntries]
+    );
+    const selSite: SiteRef | null = sel ? normalizeSite({ region: sel.region, side: sel.side, aspect }) : null;
+    /** A local finding is lit on the zone it was found at, not on every zone. */
+    const litHere = (o: Observable) =>
+        o.localizable && onObservableToggleAt && selSite
+            ? (sitesByLabel.get(o.label) ?? []).some((s) => sameSite(s, selSite))
+            : onChart.has(o.label);
 
-    /** The chips for the currently selected zone — specific first, generic after. */
-    const chipsFor = (region: BodyRegion): Observable[] => {
-        const specific = jointPainChip(region, aspect);
-        const labels = [
-            ...(specific ? [specific] : []),
-            ...GENERIC_FINDING_LABELS,
-        ];
-        // `byLabel.get` returns undefined for a label not in the catalogue —
-        // skipped rather than thrown, same defensive posture as every other
-        // chip lookup in this app (content can lag code; it must never crash
-        // the consult).
-        return labels.map((l) => byLabel.get(l)).filter((o): o is Observable => !!o);
+    /** Where else a local finding already is — "at Right knee", "no place yet". */
+    const awayNote = (o: Observable): string | null => {
+        if (!o.localizable || !onObservableToggleAt || !onChart.has(o.label)) return null;
+        const at = sitesByLabel.get(o.label) ?? [];
+        if (!at.length) return "no place yet";
+        return `at ${clinicalSiteLabel(at[0])}${at.length > 1 ? ` +${at.length - 1}` : ""}`;
     };
+
+
+    /**
+     * The chips for the selected zone (Step 3, 2026-09-25): its own pain
+     * chip, then what is examined at that KIND of place (`regionFindings.ts`)
+     * — split by the observable's own kind into what the patient reports and
+     * what is found, the Case Sheet's two groups. `byLabel.get` misses a
+     * label not in the catalogue and it is skipped, never thrown: content
+     * can lag code and must never crash the consult.
+     */
+    const panelChips = useMemo(() => {
+        if (!sel) return null;
+        const specific = jointPainChip(sel.region, aspect);
+        const { primary, more } = regionChips(sel.region, aspect);
+        const pick = (labels: string[]) =>
+            labels.map((l) => byLabel.get(l)).filter((o): o is Observable => !!o);
+        return pick([...(specific ? [specific] : []), ...primary, ...more]);
+    }, [sel, aspect, byLabel]);
+
+    /** Every other local finding, reached by typing in the panel's field. */
+    const localCatalogue = useMemo(() => observables.filter((o) => o.localizable), [observables]);
+
+    // Stable per site, so the field's search does not re-run on every render.
+    const selKey = selSite ? siteKey(selSite) : null;
+    /** The assessments made at the selected site. */
+    const dxHere = useMemo(
+        () => (selSite && assessmentLines ? assessmentLines.filter((l) => l.site && sameSite(l.site, selSite)) : []),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [assessmentLines, selKey],
+    );
+    const findDx = useCallback(async (q: string) => {
+        if (!selSite) return [];
+        const hits = await searchAssessments(q);
+        // Only what can sit HERE: a meniscal tear is offered at a knee, not
+        // at a wrist; "Knee osteoarthritis" not at a hip.
+        return hits.filter((h) => {
+            const f = familyFor(h.label);
+            return !!f && siteAllowed(f, selSite);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selKey, searchAssessments]);
+
+    const assessmentApi: SiteAssessmentApi | undefined = selSite && onAddAssessmentAt && onAssessmentDetails && onRemoveAssessment
+        ? {
+            recorded: dxHere,
+            find: findDx,
+            onAdd: (h) => onAddAssessmentAt({
+                intentId: h.intentId, type: h.type, label: h.label, refTable: h.refTable, refId: h.refId,
+                medicine: null, viaSearch: true, overridden: false,
+            }, selSite),
+            onAddCustom: onAddCustomAssessmentAt ? (label) => onAddCustomAssessmentAt(label, selSite) : undefined,
+            ownTerms: ownAssessmentTerms,
+            onDetails: onAssessmentDetails,
+            onRemove: (l) => onRemoveAssessment(l.text),
+        }
+        : undefined;
+
+    const hereCount = dxHere.length + (!panelChips ? 0
+        : [...panelChips, ...localCatalogue].filter((o, i, all) => all.findIndex((x) => x.id === o.id) === i && litHere(o)).length);
 
     const marked = useMemo(() => {
         const s = new Set<string>();
         for (const f of items) {
             if (f.aspect === aspect) s.add(`${f.region}-${f.side ?? "mid"}`);
         }
+        // A finding recorded AT a place marks that place too: the figure
+        // shows everywhere something was found, not only the joints that
+        // were marked by hand. A limb reads the same from either side; the
+        // spine only from behind, the chest only from the front.
+        for (const e of caseSheetEntries) {
+            for (const st of e.sites ?? []) {
+                const limb = st.region !== "neck" && st.region !== "torso_upper" && st.region !== "torso_lower"
+                    && st.region !== "head_top" && st.region !== "head_bottom" && st.region !== "pelvis";
+                if (!limb && st.aspect !== aspect) continue;
+                const sides = st.side === "both" || st.side === null ? ["left", "right", "mid"] : [st.side];
+                for (const sd of sides) s.add(`${st.region}-${sd}`);
+            }
+        }
         return s;
-    }, [items, aspect]);
+    }, [items, aspect, caseSheetEntries]);
 
     const shown = useMemo(
         () => items.filter((f) => f.aspect === aspect),
         [items, aspect]
     );
 
-    const onAdd = async () => {
-        if (!visitId || !sel) return;
-        setSaving(true);
-        setError(null);
+    /** This zone's one row in `visit_body_sites`, if it is marked yet. */
+    const siteRow = sel
+        ? items.find((f) => f.region === sel.region && f.side === sel.side && f.aspect === aspect) ?? null
+        : null;
+
+    /**
+     * Mark the selected site — once. Every path that records something AT a
+     * place comes through here (an examination reading, a finding, a note),
+     * so a site is never marked twice: the old "Mark site" button inserted a
+     * second row for a joint that recording the pain score had already
+     * marked. The ref is checked and set synchronously because `items` only
+     * updates once an insert resolves, and two quick readings would otherwise
+     * both see an unmarked site.
+     */
+    const ensureSite = async (note?: string | null): Promise<BodySiteFinding | null> => {
+        if (!visitId || !sel || disabled) return null;
+        if (siteRow) {
+            if (note === undefined || (note || null) === (siteRow.note || null)) return siteRow;
+            const updated = await updateBodySiteNote(siteRow.id, note || null);
+            setItems((curr) => curr.map((i) => (i.id === updated.id ? updated : i)));
+            return updated;
+        }
+        const slot = `${sel.region}|${sel.side ?? "-"}|${aspect}`;
+        if (autoMarking.current.has(slot)) return null;
+        autoMarking.current.add(slot);
         try {
             const site = await addBodySite({
                 visitId, region: sel.region, aspect, side: sel.side,
-                note: note.trim() || undefined, doctorId,
+                note: note || undefined, doctorId,
             });
             setItems((curr) => [site, ...curr]);
-            setNote("");
+            return site;
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not save site");
+            // Cleared on failure, so a transient network error does not stop
+            // this joint from ever being marked.
+            autoMarking.current.delete(slot);
+            throw err;
+        }
+    };
+
+    // The note belongs to the site row: shown when the zone opens, saved on
+    // Enter or when the field is left. No button — there is nothing else to do.
+    useEffect(() => { setNote(siteRow?.note ?? ""); }, [siteRow?.id, siteRow?.note, sel?.region, sel?.side]);
+    const commitNote = async () => {
+        const next = note.trim();
+        if (next === (siteRow?.note ?? "") || (!siteRow && !next)) return;
+        setSaving(true);
+        setError(null);
+        try {
+            await ensureSite(next);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not save the note");
         } finally {
             setSaving(false);
         }
     };
 
     /**
-     * Recording an examination at a joint IS marking that joint.
-     *
-     * Without this, the flow the brief describes — open the map, click the
-     * right knee, enter flexion and strength, close — leaves `visit_body_sites`
-     * empty, so the consultation's summary strip reports nothing examined
-     * while three readings sit in the database against a site nobody declared.
-     * "Mark site" stays for the case it was built for (a site worth naming
-     * with a note and no measurements), but it is no longer the only way in,
-     * because making the doctor press it after they have already typed the
-     * numbers is asking them to tell the software something it just watched
-     * them do.
+     * Recording something at a joint IS marking that joint — an examination
+     * reading, or a finding recorded here. Without this, the flow the brief
+     * describes (open the map, click the right knee, enter flexion and
+     * strength, close) left `visit_body_sites` empty, so the summary strip
+     * reported nothing examined while readings sat against an undeclared site.
      */
+    const foundHere = !!selSite && (dxHere.length > 0
+        || caseSheetEntries.some((e) => (e.sites ?? []).some((st) => sameSite(st, selSite))));
     useEffect(() => {
-        if (!examination || !sel || !visitId || disabled) return;
-        if (!REGION_BY_KEY.has(sel.region)) return;
-        const already = items.some(
-            (f) => f.region === sel.region && f.side === sel.side && f.aspect === aspect
-        );
-        if (already) return;
-        const c = examCounts(examination, sel.region, sel.side);
-        if (c.rom === 0 && c.strength === 0 && c.tests === 0 && c.pain === null) return;
-
-        // `items` only updates once the insert RESOLVES, so two readings typed
-        // in quick succession would both see an unmarked site and both insert
-        // one. The ref is checked and set synchronously, which the state cannot
-        // be — this is the same reason `saving` above is not enough here.
-        const slot = `${sel.region}|${sel.side ?? "-"}|${aspect}`;
-        if (autoMarking.current.has(slot)) return;
-        autoMarking.current.add(slot);
-
-        addBodySite({ visitId, region: sel.region, aspect, side: sel.side, doctorId })
-            .then((site) => setItems((curr) => [site, ...curr]))
-            // Left in the set on success (the site is marked, nothing more to
-            // do) and cleared on failure, so a transient network error does not
-            // permanently stop this joint from ever being marked.
-            .catch(() => { autoMarking.current.delete(slot); });
+        if (!sel || !visitId || disabled || siteRow) return;
+        const c = examination && REGION_BY_KEY.has(sel.region) ? examCounts(examination, sel.region, sel.side) : null;
+        const nv = !!examination && NV_REGIONS.has(sel.region)
+            && NV_CHECKS.some((k) => examination.getText(nvKey(k.key, sel.region), sel.side) !== null);
+        const examined = nv || (!!c && (c.rom > 0 || c.strength > 0 || c.tests > 0 || c.pain !== null));
+        if (!examined && !foundHere) return;
+        ensureSite().catch(() => {});
         // `examination.numbers` / `.texts` are the identities that change when a
         // reading lands — the hook itself is stable across those writes.
-    }, [examination?.numbers, examination?.texts, sel, visitId, aspect, items, disabled, doctorId, examination]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [examination?.numbers, examination?.texts, sel, visitId, aspect, siteRow, disabled, foundHere]);
 
     const onDelete = async (f: BodySiteFinding) => {
         setItems((curr) => curr.filter((i) => i.id !== f.id));
@@ -272,143 +404,217 @@ export function JointMapCard({
 
     const body = (
             <div className="cs-attach-body">
-                <div className="cs-attach-tagrow cs-body-aspect">
-                    {(["front", "back"] as BodyAspect[]).map((a) => (
-                        <button
-                            key={a}
-                            type="button"
-                            className={`cs-attach-chip${aspect === a ? " is-on" : ""}`}
-                            onClick={() => setAspect(a)}
-                        >
-                            {a === "front" ? "Front" : "Back"}
-                        </button>
-                    ))}
-                </div>
-
-                <div className={`cs-body${disabled || !visitId ? " is-disabled" : ""}`}>
-                    <svg viewBox={FIGURE_VIEWBOX} className="cs-body-svg" role="img"
-                        aria-label="Joint map — click a joint to record what it is doing">
-                        {BODY_ZONES.map((z) => {
-                            const isMarked = marked.has(`${z.region}-${z.side ?? "mid"}`);
-                            const isSel = sel?.region === z.region && sel?.side === z.side;
-                            return (
-                                <path
-                                    key={z.key}
-                                    d={z.path}
-                                    data-region={z.region}
-                                    data-side={z.side ?? "mid"}
-                                    className={
-                                        "cs-body-zone" +
-                                        (isMarked ? " is-marked" : "") +
-                                        (isSel ? " is-sel" : "")
-                                    }
-                                    onClick={() => {
-                                        if (disabled || !visitId) return;
-                                        setSel((c) =>
-                                            c && c.region === z.region && c.side === z.side
-                                                ? null
-                                                : { region: z.region, side: z.side }
-                                        );
-                                    }}
-                                >
-                                    <title>{siteLabel(z.region, aspect, z.side)}</title>
-                                </path>
-                            );
-                        })}
-                    </svg>
-                    <span className="cs-body-orient">
-                        {aspect === "front"
-                            ? "Facing you — the patient's right is on your left"
-                            : "From behind — the patient's right is on your right"}
-                    </span>
-                </div>
-
-                {sel ? (
-                    <div className="cs-dchart-panel">
-                        <div className="cs-dchart-panel-head">
-                            <span className="cs-dchart-panel-title">
-                                {siteLabel(sel.region, aspect, sel.side)}
-                            </span>
-                            <button type="button" className="cs-dchart-panel-close"
-                                onClick={() => setSel(null)} aria-label="Close">
-                                <X size={13} />
-                            </button>
-                        </div>
-
-                        {/* Chips first — see file header. Each one IS the
-                            Case Sheet's own toggle, so a chip lit here is lit
-                            there too, and vice versa. */}
-                        <div className="cs-attach-tagrow">
-                            {chipsFor(sel.region).map((o) => (
+                {/* ── Fixed two-column layout, on purpose (2026-09-23) ──────
+                    Selecting a joint used to insert the whole detail panel
+                    (chips + exam fields + note) into this same vertical flow,
+                    right below the figure. That grew the panel's own height,
+                    which grew the modal's height, which — because the modal
+                    is centered on screen — re-centered the WHOLE thing,
+                    visibly shifting the joint the doctor had just clicked.
+                    Reported directly: "you click on it and then it moves...
+                    because the thing inside of it is grown up." The figure
+                    column and the detail column are now fixed-size siblings:
+                    the detail column has its own reserved height and its own
+                    scroll, so filling it in never changes what the figure
+                    column — or the modal around both of them — is doing. */}
+                <div className="cs-jmap-layout">
+                    <div className={`cs-body cs-jmap-figure-col${disabled || !visitId ? " is-disabled" : ""}`}>
+                        <div className="cs-attach-tagrow cs-body-aspect">
+                            {(["front", "back"] as BodyAspect[]).map((a) => (
                                 <button
-                                    key={o.id}
+                                    key={a}
                                     type="button"
-                                    className={`cs-attach-chip${onChart.has(o.label) ? " is-on" : ""}`}
-                                    onClick={() => onObservableToggle(o)}
+                                    className={`cs-attach-chip${aspect === a ? " is-on" : ""}`}
+                                    onClick={() => setAspect(a)}
                                 >
-                                    {o.label}
+                                    {a === "front" ? "Front" : "Back"}
                                 </button>
                             ))}
                         </div>
 
-                        {/* ── The examination for THIS joint ────────────────
-                            Pain, range, strength and special tests, scoped to
-                            the zone that was just clicked and to the side it
-                            was clicked on. This is the whole of brief §4's
-                            "generic ROM card is ambiguous" complaint answered:
-                            there is no way to reach these fields except
-                            through a site, so they cannot be recorded without
-                            one. Renders nothing for a zone the catalogue has
-                            no movements for (a hand, the chest). */}
-                        {examination && REGION_BY_KEY.has(sel.region) && (
-                            <RegionExam
-                                exam={examination}
-                                regionKey={sel.region}
-                                side={sel.side}
-                                disabled={disabled}
-                            />
+                        <svg viewBox={FIGURE_VIEWBOX} className="cs-body-svg" role="img"
+                            aria-label="Joint map — click a joint to record what it is doing">
+                            {BODY_ZONES.map((z) => {
+                                const isMarked = marked.has(`${z.region}-${z.side ?? "mid"}`);
+                                // The spine has no side: a click on either half of
+                                // the back selects the whole level, both halves lit.
+                                const isSel = sel?.region === z.region
+                                    && (sel?.side === z.side || isMidline(z.region, aspect));
+                                return (
+                                    <path
+                                        key={z.key}
+                                        d={z.path}
+                                        data-region={z.region}
+                                        data-side={z.side ?? "mid"}
+                                        className={
+                                            "cs-body-zone" +
+                                            (isMarked ? " is-marked" : "") +
+                                            (isSel ? " is-sel" : "")
+                                        }
+                                        onClick={() => {
+                                            if (disabled || !visitId) return;
+                                            setSel((c) =>
+                                                c && c.region === z.region && (c.side === z.side || isMidline(z.region, aspect))
+                                                    ? null
+                                                    : { region: z.region, side: z.side }
+                                            );
+                                        }}
+                                    >
+                                        <title>{siteLabel(z.region, aspect, z.side)}</title>
+                                    </path>
+                                );
+                            })}
+                        </svg>
+                        <span className="cs-body-orient">
+                            {aspect === "front"
+                                ? "Facing you — the patient's right is on your left"
+                                : "From behind — the patient's right is on your right"}
+                        </span>
+                    </div>
+
+                    <div className="cs-jmap-detail-col">
+                        {sel ? (
+                            <div className="cs-dchart-panel cs-jmap-panel" key={`${sel.region}|${sel.side ?? "-"}`}>
+                                <div className="cs-jmap-panel-head">
+                                    <span className="cs-jmap-panel-pin" aria-hidden="true"><MapPin size={14} /></span>
+                                    <span className="cs-jmap-panel-titles">
+                                        <span className="cs-jmap-panel-title">
+                                            {selSite ? clinicalSiteLabel(selSite) : siteLabel(sel.region, aspect, sel.side)}
+                                        </span>
+                                        <span className="cs-jmap-panel-sub">
+                                            {hereCount > 0
+                                                ? `${hereCount} recorded here`
+                                                : "Nothing recorded here yet"}
+                                        </span>
+                                    </span>
+                                    <button type="button" className="cs-dchart-panel-close"
+                                        onClick={() => setSel(null)} aria-label="Close">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+
+                                {/* What is here, then one field to add more —
+                                    never a wall of option chips. Each pick IS
+                                    the Case Sheet's own toggle, so what is
+                                    recorded here is on the sheet too, and a
+                                    local finding is recorded AT this place. */}
+                                {panelChips && selSite && (
+                                    <JointFindingField
+                                        key={`${sel.region}|${sel.side ?? "-"}|${aspect}`}
+                                        placeLabel={clinicalSiteLabel(selSite)}
+                                        suggested={panelChips}
+                                        catalogue={localCatalogue}
+                                        isHere={litHere}
+                                        awayNote={awayNote}
+                                        disabled={disabled}
+                                        onToggle={(o) => (o.localizable && onObservableToggleAt
+                                            ? onObservableToggleAt(o, selSite)
+                                            : onObservableToggle(o))}
+                                        assessment={assessmentApi}
+                                        onAddCustomFinding={onAddCustomFindingAt
+                                            ? (label, kind) => onAddCustomFindingAt(label, kind, selSite)
+                                            : undefined}
+                                    />
+                                )}
+
+                                {/* Distal to an injured limb: pulse, refill,
+                                    motor, sensation — see NeurovascularCheck. */}
+                                {examination && NV_REGIONS.has(sel.region) && (
+                                    <NeurovascularCheck
+                                        exam={examination}
+                                        region={sel.region}
+                                        side={sel.side}
+                                        disabled={disabled}
+                                    />
+                                )}
+
+                                {/* ── The examination for THIS joint ────────
+                                    Pain, range, strength and special tests,
+                                    scoped to the zone that was just clicked
+                                    and to the side it was clicked on. This is
+                                    the whole of brief §4's "generic ROM card
+                                    is ambiguous" complaint answered: there is
+                                    no way to reach these fields except
+                                    through a site, so they cannot be recorded
+                                    without one. Renders nothing for a zone
+                                    the catalogue has no movements for (a
+                                    hand, the chest). */}
+                                {examination && REGION_BY_KEY.has(sel.region) && (
+                                    <RegionExam
+                                        exam={examination}
+                                        regionKey={sel.region}
+                                        side={sel.side}
+                                        disabled={disabled}
+                                    />
+                                )}
+
+                                {/* Last resort, not the only option —
+                                    doctrine's own rule, applied here instead
+                                    of a note field. */}
+                                <div className="cs-attach-tagrow">
+                                    <input
+                                        className="cs-attach-region-input"
+                                        placeholder={`Note for the ${(selSite ? clinicalSiteLabel(selSite) : "site").toLowerCase()} (optional)`}
+                                        value={note}
+                                        onChange={(e) => setNote(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+                                        onBlur={commitNote}
+                                    />
+                                    {saving && <Loader2 size={13} className="cs-spin cs-jmap-note-busy" aria-label="Saving" />}
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="cs-attach-empty">
+                                Click the joint. Side and site are recorded here; what's wrong with it
+                                is a chip, the same ones Synapse ranks from everywhere else.
+                            </p>
                         )}
-
-                        {/* Last resort, not the only option — doctrine's own
-                            rule, applied here instead of a note field. */}
-                        <div className="cs-attach-tagrow">
-                            <input
-                                className="cs-attach-region-input"
-                                placeholder="Anything a chip doesn't capture"
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
-                            />
-                            <button type="button" className="cs-attach-tagsave" disabled={saving} onClick={onAdd}>
-                                {saving ? <Loader2 size={13} className="cs-spin" /> : "Mark site"}
-                            </button>
-                        </div>
                     </div>
-                ) : (
-                    <p className="cs-attach-empty">
-                        Click the joint. Side and site are recorded here; what's wrong with it
-                        is a chip, the same ones Synapse ranks from everywhere else.
-                    </p>
-                )}
+                </div>
 
-                {shown.map((f) => (
-                    <div key={f.id} className="cs-attach-row">
-                        <span className="cs-attach-icon">
-                            <i className="cs-dchart-dot is-cond-teal" />
-                        </span>
-                        <span className="cs-attach-meta">
-                            <span className="cs-attach-label">
-                                {siteLabel(f.region, f.aspect, f.side)}
-                                <i className="cs-attach-tagbadge">{regionLabel(f.region, f.aspect)}</i>
-                            </span>
-                            {f.note && <span className="cs-attach-size">{f.note}</span>}
-                        </span>
-                        <button type="button" className="cs-attach-action is-danger"
-                            onClick={() => onDelete(f)} aria-label="Remove site" title="Remove">
-                            <Trash2 size={13} />
-                        </button>
-                    </div>
-                ))}
+                {/* Reserved height, same principle as the two-column split
+                    above — Anmol, live (re: the same shift happening again
+                    here): "whenever you are adding more and more joints, you
+                    click on that and the model expands." This list used to
+                    grow the surrounding column with every site marked, which
+                    grew the modal, which re-centered it. One row's worth of
+                    height is reserved even when nothing is marked yet; past
+                    three rows it scrolls internally instead of pushing the
+                    modal taller. */}
+                <div className="cs-jmap-marked">
+                    {shown.length === 0 ? (
+                        <p className="cs-jmap-marked-empty">No sites marked yet on this view.</p>
+                    ) : (
+                        shown.map((f) => (
+                            <div key={f.id} className="cs-attach-row">
+                                {/* Was `.cs-dchart-dot` — an 8px legend dot
+                                    borrowed from the dental chart, where it
+                                    distinguishes SEVERAL condition colours in
+                                    one legend. There is only ever one kind of
+                                    thing marked here, so the dot had nothing
+                                    to distinguish and just read as an icon
+                                    tile with nothing in it — Anmol, live:
+                                    "you are trying to give some icon... that
+                                    is not appearing." A real icon, matching
+                                    the strip that opens this card. */}
+                                <span className="cs-attach-icon">
+                                    <PersonStanding size={16} />
+                                </span>
+                                <span className="cs-attach-meta">
+                                    <span className="cs-attach-label">
+                                        {siteLabel(f.region, f.aspect, f.side)}
+                                        <i className="cs-attach-tagbadge">{regionLabel(f.region, f.aspect)}</i>
+                                    </span>
+                                    {f.note && <span className="cs-attach-size">{f.note}</span>}
+                                </span>
+                                <button type="button" className="cs-attach-action is-danger"
+                                    onClick={() => onDelete(f)} aria-label="Remove site" title="Remove">
+                                    <Trash2 size={13} />
+                                </button>
+                            </div>
+                        ))
+                    )}
+                </div>
 
                 {items.length > shown.length && (
                     <p className="cs-odo-scope">
@@ -424,7 +630,7 @@ export function JointMapCard({
     if (presentation === "modal") {
         if (!open) return null;
         return (
-            <ChartSurface title="Body map & examination" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})}>
+            <ChartSurface title="Body map & examination" icon={<PersonStanding size={15} />} expanded onClose={onClose ?? (() => {})} maxWidth={800}>
                 {body}
             </ChartSurface>
         );
@@ -449,7 +655,7 @@ export function JointMapCard({
                 </button>
             </div>
 
-            <ChartSurface title="Joint map" icon={<PersonStanding size={15} />} expanded={expanded} onClose={() => setExpanded(false)}>
+            <ChartSurface title="Joint map" icon={<PersonStanding size={15} />} expanded={expanded} onClose={() => setExpanded(false)} maxWidth={800}>
                 {body}
             </ChartSurface>
         </section>

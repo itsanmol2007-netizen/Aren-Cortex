@@ -34,6 +34,24 @@ export interface PublicRxMedicine {
      *  in practice — localized client-side via localizeTiming. */
     instructions: string;
     isSos: boolean;
+    /** Per-medicine dispensing billing (opt-in) — null for every clinic
+     *  that has never turned this on, in which case the Billing card's
+     *  medicine line stays a single lump total. */
+    quantityDispensed: number | null;
+    unitPrice: number | null;
+}
+
+export interface PublicRxBilling {
+    /** Net of front-desk's own intake-time discount. Null when this visit
+     *  never had a consultation fee at all. */
+    consultationFee: number | null;
+    feeGstAmount: number;
+    medicineTotal: number;
+    medicineGstAmount: number;
+    additionalCharges: { label: string; amount: number }[];
+    discountPercent: number | null;
+    discountAmount: number;
+    total: number;
 }
 
 export interface PublicRxData {
@@ -68,12 +86,27 @@ export interface PublicRxData {
     symptoms: string[];
     findings: string[];
     diagnosisText: string | null;
+    /** structured assessments with place and details (newer visits); preferred over diagnosisText */
+    assessments?: string[];
+    /** results of earlier investigations read at this visit */
+    results?: { name: string; text: string }[];
+    /** procedures done today, or planned with a due date (yyyy-mm-dd) */
+    procedures?: { text: string; status: "performed" | "planned"; due: string | null }[];
+    /** the home programme, one formatted line each */
+    exercises?: string[];
     vitals: Record<string, unknown> | null;
     medicines: PublicRxMedicine[];
     tests: string[];
+    /** the lab the tests were ordered from, and how to get there (2026-09-27) */
+    lab?: { name: string; address: string | null; mapsUrl: string | null } | null;
     advice: string[];
     followUpDays: number | null;
     footerNote: string | null;
+    /** The same figures the printed prescription's own Billing card shows —
+     *  null when this visit never had a fee, medicine billing or an
+     *  additional charge (the vast majority; most clinics show nothing
+     *  here, exactly as before this existed). */
+    billing: PublicRxBilling | null;
 }
 
 type Ok = { ok: true; rx: PublicRxData };

@@ -45,6 +45,7 @@
 import { useMemo, useRef } from "react";
 import { Activity, Check, Plus, X } from "lucide-react";
 import { useRovingList } from "../../hooks/useRovingList";
+import { BlankExerciseArt } from "./BlankArt";
 import {
     IntentSearchField, IntentSearchResults, useIntentSearch,
 } from "./IntentSearch";
@@ -52,7 +53,7 @@ import { RELEVANCE_TEXT, ThinkingRing, rankFillOf, relevanceOf } from "./parts";
 import { motion, useReducedMotion } from "motion/react";
 import { CASCADE_STAGE, cascadeRowProps, rankOrderKey, useRankCascade } from "./cascade";
 import {
-    comparePlans, formatDose, formatSide, identityOf,
+    comparePlans, exerciseName, formatDose, formatSide, identityOf,
     type ExerciseLine, type ExerciseSide, type Progression,
 } from "./exercisePlan";
 import type { AcceptPayload } from "./types";
@@ -111,7 +112,7 @@ function DoseBox({
 
 function PrescribedRow({
     line, verdict, previous, showBadges, disabled,
-    onUpdate, onRemove, onSide,
+    onUpdate, onEdit, onRemove, onSide,
 }: {
     line: ExerciseLine;
     verdict: Progression;
@@ -120,6 +121,7 @@ function PrescribedRow({
     showBadges: boolean;
     disabled: boolean;
     onUpdate: (patch: Partial<ExerciseLine>) => void;
+    onEdit?: () => void;
     onRemove: () => void;
     onSide: (side: ExerciseSide) => void;
 }) {
@@ -135,7 +137,13 @@ function PrescribedRow({
 
             <div className="cs-ex-main">
                 <div className="cs-ex-head">
-                    <span className="cs-ex-label">{line.label}</span>
+                    {onEdit ? (
+                        <button type="button" className="cs-ex-label is-edit" onClick={onEdit} title="Edit dose, side and cues">
+                            {exerciseName(line.label)}
+                        </button>
+                    ) : (
+                        <span className="cs-ex-label">{exerciseName(line.label)}</span>
+                    )}
                     {side && <span className="cs-ex-side">{side}</span>}
                     {showBadges && <Badge verdict={verdict} />}
                 </div>
@@ -257,7 +265,7 @@ function PrescribedRow({
 export function ExercisePlanCard({
     title, intents, topScore, thinkingKey, plan, previousPlan, previousAt,
     ruleset, activeSignals, hasChart, disabled = false,
-    onAccept, onUpdate, onRemove, onDuplicateForSide,
+    onAccept, onUpdate, onEdit, onRemove, onDuplicateForSide,
     searchRef, className = "",
 }: {
     /** the facility's own word for this slot — "Exercise Plans" */
@@ -277,6 +285,8 @@ export function ExercisePlanCard({
     disabled?: boolean;
     onAccept: (payload: AcceptPayload) => void;
     onUpdate: (id: string, patch: Partial<ExerciseLine>) => void;
+    /** open the line's dose sheet (ExerciseSheet.tsx) */
+    onEdit?: (id: string) => void;
     onRemove: (id: string) => void;
     onDuplicateForSide: (id: string, side: ExerciseSide) => void;
     searchRef?: React.RefObject<HTMLInputElement>;
@@ -338,15 +348,19 @@ export function ExercisePlanCard({
         <section className={`cs-card cs-ex-card ${className}`} aria-label={title}>
             <div className="cs-card-head">
                 <h2 className="cs-card-title">
-                    <span className="cs-glyph is-blue"><Activity size={16} /></span>
+                    <span className="cs-glyph is-blue cs-glyph-live">
+                        <ThinkingRing pulseKey={thinkingKey} />
+                        <Activity size={16} />
+                    </span>
                     {title}
-                    <ThinkingRing pulseKey={thinkingKey} />
                 </h2>
-                <span className="cs-card-count">
-                    {plan.length > 0
-                        ? `${plan.length} prescribed`
-                        : `${intents.length} suggested`}
-                </span>
+                {(plan.length > 0 || intents.length > 0) && (
+                    <span className="cs-count is-quiet">
+                        {plan.length > 0
+                            ? `${plan.length} prescribed`
+                            : `${intents.length} suggested`}
+                    </span>
+                )}
             </div>
 
             {/* Not a convenience — the only way to an exercise. See the header. */}
@@ -398,6 +412,7 @@ export function ExercisePlanCard({
                                         showBadges={comparison.hasPrevious}
                                         disabled={disabled}
                                         onUpdate={(patch) => onUpdate(line.id, patch)}
+                                        onEdit={onEdit ? () => onEdit(line.id) : undefined}
                                         onRemove={() => onRemove(line.id)}
                                         onSide={(s) =>
                                             line.side === null
@@ -477,11 +492,20 @@ export function ExercisePlanCard({
                         )}
 
                         {plan.length === 0 && offered.length === 0 && (
-                            <p className="cs-ex-empty">
-                                {hasChart
-                                    ? "No exercise ranked for this chart — search above to add one."
-                                    : "Record the complaint first, or search above."}
-                            </p>
+                            <div className="cs-empty">
+                                <BlankExerciseArt />
+                                {hasChart ? (
+                                    <>
+                                        <strong>No exercise ranked for this chart</strong>
+                                        <span>Search above to add one directly.</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>Nothing on the chart yet</strong>
+                                        <span>Record the complaint first, or search above.</span>
+                                    </>
+                                )}
+                            </div>
                         )}
                     </>
                 )}

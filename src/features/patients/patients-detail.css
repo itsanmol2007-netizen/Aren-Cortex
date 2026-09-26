@@ -380,7 +380,7 @@ button.prec-trend-card.is-clickable:hover {
     background: #ffffff;
     border: 1px solid #edf0f7;
     border-radius: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
     overflow: hidden;
     transition: border-color 0.12s;
 }
@@ -397,8 +397,8 @@ button.prec-trend-card.is-clickable:hover {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
+    gap: 14px;
+    padding: 14px 18px;
     background: none;
     border: none;
     cursor: pointer;
@@ -410,30 +410,30 @@ button.prec-trend-card.is-clickable:hover {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    min-width: 78px;
+    min-width: 84px;
 }
 
 .prec-tl-date {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 700;
     color: #0f172a;
 }
 
 .prec-tl-ago {
-    font-size: 10px;
+    font-size: 11.5px;
     color: #94a3b8;
 }
 
 .prec-tl-type-badge {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: #6d28d9;
     background: #f5f3ff;
     border: 1px solid rgba(109, 40, 217, 0.16);
-    border-radius: 4px;
-    padding: 2px 7px;
+    border-radius: 5px;
+    padding: 3px 9px;
     flex-shrink: 0;
     white-space: nowrap;
 }
@@ -441,7 +441,7 @@ button.prec-trend-card.is-clickable:hover {
 .prec-tl-preview {
     flex: 1;
     min-width: 0;
-    font-size: 11px;
+    font-size: 12.5px;
     color: #64748b;
     white-space: nowrap;
     overflow: hidden;
@@ -455,13 +455,13 @@ button.prec-trend-card.is-clickable:hover {
 .prec-tl-header-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     margin-left: auto;
     flex-shrink: 0;
 }
 
 .prec-tl-stat {
-    font-size: 10px;
+    font-size: 11.5px;
     color: #64748b;
     white-space: nowrap;
 }
@@ -484,18 +484,18 @@ button.prec-trend-card.is-clickable:hover {
 }
 
 .prec-tl-body {
-    padding: 0 14px 14px;
+    padding: 0 18px 18px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 16px;
     border-top: 1px solid #f1f5f9;
-    padding-top: 10px;
+    padding-top: 14px;
 }
 
 .prec-tl-two-col {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 24px;
 }
 
 @media (max-width: 640px) {
@@ -505,25 +505,25 @@ button.prec-trend-card.is-clickable:hover {
 }
 
 .prec-tl-section-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: #94a3b8;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
 }
 
 .prec-tl-med-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 9px;
 }
 
 .prec-tl-med-row {
     display: flex;
     align-items: center;
-    gap: 7px;
-    font-size: 11px;
+    gap: 9px;
+    font-size: 13px;
 }
 
 .prec-tl-med-icon {
@@ -538,6 +538,7 @@ button.prec-trend-card.is-clickable:hover {
 
 .prec-tl-med-detail {
     color: #94a3b8;
+    font-size: 12px;
 }
 
 /* The patient's own words on how a complaint started (visit_story) — plain
@@ -549,20 +550,20 @@ button.prec-trend-card.is-clickable:hover {
 }
 
 .prec-tl-story-duration {
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     color: #1e293b;
 }
 
 .prec-tl-story-text {
-    font-size: 11px;
+    font-size: 12.5px;
     color: #64748b;
     line-height: 1.5;
     font-style: italic;
 }
 
 .prec-tl-empty {
-    font-size: 12px;
+    font-size: 13px;
     color: #94a3b8;
     font-style: italic;
 }
@@ -641,8 +642,8 @@ button.prec-trend-card.is-clickable:hover {
 
 .prec-tl-actions {
     display: flex;
-    gap: 8px;
-    padding-bottom: 4px;
+    gap: 10px;
+    padding-bottom: 6px;
     border-bottom: 1px solid #f1f5f9;
     margin-bottom: 2px;
 }
@@ -650,13 +651,13 @@ button.prec-trend-card.is-clickable:hover {
 .prec-tl-action-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 11px;
+    gap: 7px;
+    padding: 8px 14px;
     background: #f7f9fc;
     border: 1px solid #e2e8f5;
-    border-radius: 7px;
+    border-radius: 8px;
     color: #1268e8;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s;

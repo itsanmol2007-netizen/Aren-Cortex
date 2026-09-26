@@ -8,10 +8,18 @@
 // informational summary and never a dead-end "not built yet."
 //
 // ── Clinical defaults, two rows of three ────────────────────────────────
-//  Row 1 — Preferred Medicines, Preferred Labs, Prescription Templates:
-//    concrete practice preferences that directly influence a consultation.
-//  Row 2 — Add New Medicine, Clinical Companions, Consultation Defaults:
-//    the surfaces that extend or configure those preferences.
+//  Medicine row  — Preferred Medicines, Add New Medicine, Medicine Pricing:
+//    consecutive and teal on purpose (2026-09-19), three different mental
+//    models (preference, catalogue data-entry, pricing) that all revolve
+//    around the same thing rather than one merged card.
+//  Tools row     — Preferred Labs, Prescription Templates, Clinical
+//    Companions: investigations, saved setups, and the cross-intent
+//    suggestion engine.
+//  Which row leads is NOT fixed — `medicineLeads` (computed from
+//  `specialty.primary`, just above the page's `return`) sets each row's
+//  flex `order`. Six of the eight specialty profiles are medicine-primary
+//  and see no change; Diagnostics and Physiotherapy see the tools row lead
+//  instead (2026-09-20) — see that constant's own comment.
 //  PRACTICE VOCABULARY — Your Clinical Terms: this doctor's own words,
 //    remembered so Cortex can offer them back.
 //
@@ -57,13 +65,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import { useNavigate } from "react-router-dom";
 import {
-    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, FlaskConical, Heart, Layers,
-    MoreHorizontal, Pill, Plus, Printer, Settings, Shield, SlidersHorizontal, Sparkles, Star,
-    ToggleLeft, ToggleRight, User, X,
+    ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, Dumbbell, FlaskConical, Heart,
+    IndianRupee, Layers,
+    MoreHorizontal, Pill, Plus, Printer, Receipt, Settings, Shield, SlidersHorizontal, Sparkles, Star,
+    ToggleLeft, ToggleRight, User, X, MapPin, MessageCircle, Pencil,
 } from "lucide-react";
+import { LabFields, EMPTY_LAB, phoneProblem, type LabDraft } from "./LabFields";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
+import { requestFocus } from "../../lib/ui/focusAnchor";
+import {
+    fetchMedicineBillingPolicy, fetchClinicMedicinePriceList, setClinicMedicinePrice,
+    type MedicineBillingPolicy, type ClinicMedicinePriceRow,
+} from "../../lib/db/medicinePricing";
+import {
+    fetchAdditionalChargesCatalog, saveAdditionalChargeToCatalog, updateAdditionalCharge,
+    deleteAdditionalCharge, type AdditionalChargeCatalogEntry,
+} from "../../lib/db/additionalCharges";
+import {
+    fetchInterventionPrices, setInterventionPrice, deleteInterventionPrice, type InterventionPrice,
+} from "../../lib/db/interventionPricing";
+import { PRICEABLE_FAMILIES, type PriceableFamily } from "../consult/interventionFamilies";
+import {
+    fetchExerciseLibrary, setExerciseLibraryEntry, deleteExerciseLibraryEntry,
+    type ExerciseLibraryEntry,
+} from "../../lib/db/exerciseLibrary";
+import { formatDose } from "../consult/exercisePlan";
 import {
     addMedicine, addPreferredLab, clearClinicBrandDefault, clearHospitalCompanionCuration,
     createHospitalCompanionEdge, createPrescriptionTemplate, deleteDoctorFreeTerm,
@@ -72,7 +101,7 @@ import {
     fetchDoctorFreeTermDetails, fetchHospitalAddedMedicines, fetchHospitalCompanionDetails,
     fetchPrescriptionTemplateDetail,
     loadPreferredLabs, loadPrescriptionTemplateSummaries, removePreferredLab,
-    replacePrescriptionTemplateItems, reorderPreferredLabs, saveDoctorFreeTerm,
+    replacePrescriptionTemplateItems, reorderPreferredLabs, saveDoctorFreeTerm, updatePreferredLab,
     setClinicBrandDefault, setDefaultPreferredLab, setDoctorMeasurePrefs,
     setHospitalCompanionCuration, updatePrescriptionTemplateMeta,
     type AuthoredCompanionEdgeDetail, type ClinicBrandDefaultDetail, type DoctorFreeTermDetail,
@@ -85,8 +114,8 @@ import type { IntentType } from "../../lib/synapse/engine";
 import { MEASURE_FIELDS, type MeasureFieldKey } from "../consult/measures";
 import { useCatalogueSearch, KIND_BADGE } from "../consult/CaseSheet";
 import {
-    BlankAddMedicineArt, BlankCompanionArt, BlankConsultDefaultsArt, BlankLabArt, BlankMedicineArt,
-    BlankTemplateArt, BlankTermArt,
+    BlankAddMedicineArt, BlankChargesArt, BlankCompanionArt, BlankExerciseArt, BlankPricingArt,
+    BlankLabArt, BlankMedicineArt, BlankTemplateArt, BlankTermArt,
 } from "../consult/BlankArt";
 import { resolveProductByName } from "../../lib/db/medicines";
 import { IntentSearchField, useIntentSearch } from "../consult/IntentSearch";
@@ -94,6 +123,7 @@ import { PracticeModal } from "./PracticeModal";
 import { useRovingList } from "../../hooks/useRovingList";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
 import type { SpecialtyProfile } from "../synapse/specialtyProfile";
+import { SpecialtyMark, hasSpecialtyMark } from "../synapse/specialtyIcons";
 import type { SidebarPage } from "../sidebar/SidebarNav";
 import "./practice.css";
 
@@ -138,6 +168,23 @@ const ROW_H = 34;
  *  clip the second line or under-cap every OTHER list to match it. Measured
  *  against the actual rendered row (icon tile + two text lines + padding). */
 const MED_ROW_H = 54;
+
+/**
+ * The corner mark's scale for a card sitting between empty and full — was a
+ * hard on/off (shown at `count <= 3`, gone past it), which read as a sudden
+ * jump rather than the SVG actually filling less dead space as real rows
+ * arrive (Anmol, 2026-09-20, Additional Charges at one row: "very terrible
+ * empty state or semi empty or half fill state"). Bigger in the near-empty
+ * case where there's real white space to fill, shrinking a step at a time,
+ * gone once the card is within one row of its own cap — there's no dead
+ * space left by then for it to fill. `null` means "don't render it".
+ */
+function fillArtScale(count: number, cap: number): number | null {
+    if (count >= cap - 1) return null;
+    if (count === 1) return 1.6;
+    if (count === 2) return 1.3;
+    return 1;
+}
 
 function CappedRows<T>({
     items, cap, rowH = ROW_H, rowClassName, renderRow, keyOf, showAllLabel, hideTrigger,
@@ -254,7 +301,7 @@ function SkelRows({ count }: { count: number }) {
 function EmptyBlock({ art, fact, next, action }: { art: ReactNode; fact: string; next: string; action?: ReactNode }) {
     return (
         <div className="prac-empty">
-            {art}
+            <div className="prac-empty-art">{art}</div>
             <strong>{fact}</strong>
             <span>{next}</span>
             {action}
@@ -447,7 +494,7 @@ function intentTypeLabel(type: IntentType): string {
         case "advice": return "Advice";
         case "finding": return "Condition";
         case "exercise": return "Exercise";
-        case "modality": return "Modality";
+        case "modality": return "Intervention";
         case "impairment": return "Impairment";
         default: return type;
     }
@@ -1008,20 +1055,33 @@ function LabsModal({
     onChange: (labs: PreferredLab[]) => void;
     onClose: () => void;
 }) {
-    const [name, setName] = useState("");
-    const [contactNote, setContactNote] = useState("");
+    const [draft, setDraft] = useState<LabDraft>(EMPTY_LAB);
     const [busy, setBusy] = useState(false);
+    /** the lab being edited in place, and its draft */
+    const [editing, setEditing] = useState<{ id: number; draft: LabDraft } | null>(null);
 
     const refresh = () => loadPreferredLabs(doctorId).then(onChange).catch(console.error);
 
     const submitAdd = () => {
-        const trimmed = name.trim();
-        if (!trimmed || busy) return;
+        const trimmed = draft.name.trim();
+        if (!trimmed || busy || phoneProblem(draft.whatsappPhone)) return;
         setBusy(true);
-        addPreferredLab({ doctorId, hospitalId, name: trimmed, contactNote, makeDefault: labs.length === 0 })
-            .then(() => { setName(""); setContactNote(""); return refresh(); })
+        addPreferredLab({
+            doctorId, hospitalId, name: trimmed, makeDefault: labs.length === 0,
+            whatsappPhone: draft.whatsappPhone, address: draft.address, mapsUrl: draft.mapsUrl,
+        })
+            .then(() => { setDraft(EMPTY_LAB); return refresh(); })
             .catch(console.error)
             .finally(() => setBusy(false));
+    };
+
+    const saveEdit = () => {
+        if (!editing || !editing.draft.name.trim() || phoneProblem(editing.draft.whatsappPhone)) return;
+        const { id, draft: d } = editing;
+        setEditing(null);
+        updatePreferredLab(id, { name: d.name, whatsappPhone: d.whatsappPhone, address: d.address, mapsUrl: d.mapsUrl })
+            .then(refresh)
+            .catch(console.error);
     };
 
     const removeLab = (id: number) => {
@@ -1042,6 +1102,8 @@ function LabsModal({
         reorderPreferredLabs(next.map((l, i) => ({ id: l.id, sortOrder: i }))).catch(console.error);
     };
 
+    const dirty = Object.values(draft).some((v) => v.trim()) || !!editing;
+
     return (
         <PracticeModal
             accent="slate"
@@ -1050,26 +1112,16 @@ function LabsModal({
             title="Your diagnostic centres"
             onClose={onClose}
             wide
-            dirty={!!name.trim() || !!contactNote.trim()}
+            dirty={dirty}
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
-            <div className="prac-modal-field">
-                <label>Add a lab</label>
-                <input
-                    type="text" value={name} placeholder="e.g. City Diagnostics"
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
-                />
-            </div>
-            <div className="prac-modal-field">
-                <label>Note (optional)</label>
-                <input
-                    type="text" value={contactNote} placeholder="Phone, address, or how you refer"
-                    onChange={(e) => setContactNote(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
-                />
-            </div>
-            <button type="button" className="prac-modal-btn is-primary is-compact" disabled={!name.trim() || busy} onClick={submitAdd}>
+            <div className="prac-modal-section-title">Add a lab</div>
+            <LabFields value={draft} onChange={setDraft} onSubmit={submitAdd} />
+            <button
+                type="button" className="prac-modal-btn is-primary is-compact"
+                disabled={!draft.name.trim() || busy || !!phoneProblem(draft.whatsappPhone)}
+                onClick={submitAdd}
+            >
                 <Plus size={14} /> Add lab
             </button>
 
@@ -1078,7 +1130,21 @@ function LabsModal({
                 <p className="prac-soon">Nothing added yet. The first one becomes your default.</p>
             ) : (
                 <div className="prac-modal-rows">
-                    {labs.map((lab, i) => (
+                    {labs.map((lab, i) => editing?.id === lab.id ? (
+                        <div key={lab.id} className="prac-lab-edit">
+                            <LabFields value={editing.draft} onChange={(d) => setEditing({ id: lab.id, draft: d })} onSubmit={saveEdit} autoFocus />
+                            <div className="prac-lab-edit-foot">
+                                <button type="button" className="prac-modal-btn is-compact" onClick={() => setEditing(null)}>Cancel</button>
+                                <button
+                                    type="button" className="prac-modal-btn is-primary is-compact"
+                                    disabled={!editing.draft.name.trim() || !!phoneProblem(editing.draft.whatsappPhone)}
+                                    onClick={saveEdit}
+                                >
+                                    <Check size={14} /> Save
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
                         <div key={lab.id} className="prac-modal-row">
                             <button
                                 type="button"
@@ -1090,8 +1156,24 @@ function LabsModal({
                             </button>
                             <div className="prac-med-info">
                                 <span className="prac-row-label">{lab.name}</span>
-                                {lab.contactNote && <span className="prac-med-brands">{lab.contactNote}</span>}
+                                <span className="prac-lab-meta">
+                                    {lab.whatsappPhone
+                                        ? <span className="is-on"><MessageCircle size={11} aria-hidden="true" /> {lab.whatsappPhone}</span>
+                                        : <span className="is-off">No WhatsApp number</span>}
+                                    {lab.address && <span><MapPin size={11} aria-hidden="true" /> {lab.address}</span>}
+                                    {!lab.address && lab.mapsUrl && <span><MapPin size={11} aria-hidden="true" /> Map link added</span>}
+                                    {!lab.address && !lab.mapsUrl && lab.contactNote && <span>{lab.contactNote}</span>}
+                                </span>
                             </div>
+                            <button
+                                type="button" className="prac-lab-editbtn" aria-label={`Edit ${lab.name}`}
+                                onClick={() => setEditing({
+                                    id: lab.id,
+                                    draft: { name: lab.name, whatsappPhone: lab.whatsappPhone ?? "", address: lab.address ?? "", mapsUrl: lab.mapsUrl ?? "" },
+                                })}
+                            >
+                                <Pencil size={12} /> Edit
+                            </button>
                             <div className="prac-reorder">
                                 <button type="button" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp size={12} /></button>
                                 <button type="button" disabled={i === labs.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown size={12} /></button>
@@ -2027,6 +2109,734 @@ function CompanionsModal({
     );
 }
 
+/**
+ * "Manage pricing" — search a medicine, then set what this clinic charges
+ * for it. Same two-step resolve as Preferred Medicines' own search
+ * (`PreferredMedicinesCard.pickHit`/`openDrill`): a brand hit ("Dolo")
+ * resolves straight to a product; a molecule hit ("paracetamol") drills
+ * into its brands first, because THAT is a real choice a doctor makes here
+ * — pricing is always on a concrete product, never a molecule.
+ *
+ * The list underneath the search is every medicine already priced, newest
+ * edit first — clicking a row reopens the same pack-price/pack-units form
+ * pre-filled, so fixing a price is the same action as setting one for the
+ * first time.
+ */
+function MedicinePricingModal({
+    hospitalId, actorUserId, rows, loading, onSaved, onClose,
+}: {
+    hospitalId: string;
+    actorUserId: string | null;
+    rows: ClinicMedicinePriceRow[];
+    loading: boolean;
+    onSaved: (next: ClinicMedicinePriceRow[]) => void;
+    onClose: () => void;
+}) {
+    const search = useIntentSearch(["medicine"]);
+    const [drill, setDrill] = useState<{ id: number; name: string } | null>(null);
+    const [drillBrands, setDrillBrands] = useState<{ medicineId: number; name: string }[]>([]);
+    const [drillLoading, setDrillLoading] = useState(false);
+
+    // The medicine currently being priced — its form replaces the search/
+    // list body until saved or cancelled, the same "one thing at a time"
+    // shape the price form already uses inside MedicineAddSheet.
+    const [pricing, setPricing] = useState<{ medicineId: number; name: string; manufacturer: string | null } | null>(null);
+    const [packPrice, setPackPrice] = useState("");
+    const [packUnits, setPackUnits] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!search.isSearching) { setDrill(null); setDrillBrands([]); }
+    }, [search.isSearching]);
+
+    const openDrill = (hit: IntentSearchHit) => {
+        if (hit.refId == null) return;
+        setDrill({ id: hit.refId, name: hit.label });
+        setDrillLoading(true);
+        fetchBrandsForComposition(hit.refId).then(setDrillBrands).catch(console.error).finally(() => setDrillLoading(false));
+    };
+
+    const startPricing = (medicineId: number, name: string, manufacturer: string | null = null) => {
+        const existing = rows.find((r) => r.medicineId === medicineId);
+        setPricing({ medicineId, name, manufacturer: manufacturer ?? existing?.manufacturer ?? null });
+        setPackPrice(existing ? String(existing.packPrice) : "");
+        setPackUnits(existing ? String(existing.packUnits) : "");
+        setError(null);
+        search.setQuery("");
+    };
+
+    const pickHit = (hit: IntentSearchHit) => {
+        if (hit.refId == null) return;
+        if (hit.matchKind !== "brand" || !hit.viaLabel) { openDrill(hit); return; }
+        resolveProductByName(hit.viaLabel)
+            .then((product) => {
+                if (!product) { openDrill(hit); return; }
+                startPricing(product.id, product.name);
+            })
+            .catch(console.error);
+    };
+
+    const submitPrice = async () => {
+        if (!pricing) return;
+        const price = Number(packPrice);
+        const units = Number(packUnits);
+        if (!Number.isFinite(price) || price < 0 || !Number.isFinite(units) || units <= 0) {
+            setError("Enter a valid pack price and unit count.");
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const saved = await setClinicMedicinePrice({
+                hospitalId, medicineId: pricing.medicineId, packPrice: price, packUnits: units, setBy: actorUserId,
+            });
+            const nextRow: ClinicMedicinePriceRow = { ...saved, medicineName: pricing.name, manufacturer: pricing.manufacturer };
+            onSaved([nextRow, ...rows.filter((r) => r.medicineId !== pricing.medicineId)]);
+            setPricing(null);
+            setPackPrice("");
+            setPackUnits("");
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that price.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="teal" icon={<IndianRupee size={15} />} eyebrow="Medicine Pricing"
+            title="What this clinic charges" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {!pricing && (
+                <div className="prac-modal-field">
+                    <IntentSearchField state={search} placeholder="Search a medicine to price it…" />
+                </div>
+            )}
+
+            {pricing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setPricing(null)}>
+                        ← Different medicine
+                    </button>
+                    <div className="prac-med-info">
+                        <span className="prac-row-label">{pricing.name}</span>
+                        {pricing.manufacturer && <span className="prac-med-brands">{pricing.manufacturer}</span>}
+                    </div>
+                    <div className="prac-modal-field-row">
+                        <div className="prac-modal-field">
+                            <label>Pack price (₹)</label>
+                            <input
+                                type="text" inputMode="decimal" value={packPrice} placeholder="e.g. 200"
+                                onChange={(e) => setPackPrice(e.target.value)} autoFocus
+                            />
+                        </div>
+                        <div className="prac-modal-field">
+                            <label>Units per pack</label>
+                            <input
+                                type="text" inputMode="numeric" value={packUnits} placeholder="e.g. 10"
+                                onChange={(e) => setPackUnits(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button
+                        type="button" className="prac-modal-btn is-primary is-compact"
+                        disabled={!packPrice.trim() || !packUnits.trim() || saving}
+                        onClick={submitPrice}
+                    >
+                        {saving ? "Saving…" : "Save price"}
+                    </button>
+                </>
+            ) : search.isSearching ? (
+                <div className="prac-search-results">
+                    {drill ? (
+                        <>
+                            <button type="button" className="prac-modal-back" onClick={() => setDrill(null)}>
+                                ← Different molecule
+                            </button>
+                            {drillLoading ? (
+                                <SkelRows count={3} />
+                            ) : drillBrands.length === 0 ? (
+                                <p className="prac-soon">No catalogue brand yet for {drill.name}.</p>
+                            ) : (
+                                drillBrands.map((b) => (
+                                    <button
+                                        key={b.medicineId} type="button" className="prac-modal-row is-pick"
+                                        onClick={() => startPricing(b.medicineId, b.name)}
+                                    >
+                                        <span className="prac-row-label">{b.name}</span>
+                                        {rows.some((r) => r.medicineId === b.medicineId) && (
+                                            <span className="prac-quiet-pill is-alt">already priced</span>
+                                        )}
+                                    </button>
+                                ))
+                            )}
+                        </>
+                    ) : search.hits.length === 0 ? (
+                        <EmptyBlock
+                            art={<BlankPricingArt />} fact={search.loading ? "Searching…" : `Nothing matches "${search.query.trim()}"`}
+                            next="Try the molecule name or a brand."
+                        />
+                    ) : (
+                        search.hits.map((hit) => {
+                            const isBrandHit = hit.matchKind === "brand" && !!hit.viaLabel;
+                            return (
+                                <button
+                                    key={hit.intentId} type="button" className="prac-hit-row"
+                                    onClick={() => (isBrandHit ? pickHit(hit) : openDrill(hit))}
+                                >
+                                    <span className="prac-med-icon" aria-hidden="true"><IndianRupee size={13} /></span>
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label is-catalogue">{isBrandHit ? hit.viaLabel : hit.label}</span>
+                                        <span className="prac-med-brands">
+                                            {isBrandHit ? hit.label : "Molecule. Pick a brand."}
+                                        </span>
+                                    </div>
+                                    {!isBrandHit && <span className="prac-hit-drill">Brands <ChevronDown size={12} /></span>}
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
+            ) : loading ? (
+                <SkelRows count={4} />
+            ) : rows.length === 0 ? (
+                <p className="prac-soon">Nothing priced yet. Search above to add your first one.</p>
+            ) : (
+                <div className="prac-modal-rows">
+                    {rows.map((r) => (
+                        <button
+                            key={r.medicineId} type="button" className="prac-modal-row is-pick"
+                            onClick={() => startPricing(r.medicineId, r.medicineName, r.manufacturer)}
+                        >
+                            <div className="prac-med-info">
+                                <span className="prac-row-label">{r.medicineName}</span>
+                                {r.manufacturer && <span className="prac-med-brands">{r.manufacturer}</span>}
+                            </div>
+                            <span className="prac-quiet-pill is-alt">₹{r.unitPrice.toFixed(2)}/unit</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
+/**
+ * Physiotherapy's exercise library — search the same flat `intents` catalog
+ * ExercisePlanCard's own search reads (no composition/brand drill: an
+ * exercise IS the intent, never a two-level pick the way medicine is), then
+ * save the dose this clinic starts it on. Same "one thing at a time" shape
+ * `MedicinePricingModal` already uses just above.
+ */
+function ExerciseLibraryModal({
+    hospitalId, actorUserId, rows, loading, onSaved, onClose,
+}: {
+    hospitalId: string;
+    actorUserId: string | null;
+    rows: ExerciseLibraryEntry[];
+    loading: boolean;
+    onSaved: (next: ExerciseLibraryEntry[]) => void;
+    onClose: () => void;
+}) {
+    const search = useIntentSearch(["exercise"]);
+    const [dosing, setDosing] = useState<{ intentId: number; label: string } | null>(null);
+    const [sets, setSets] = useState("");
+    const [reps, setReps] = useState("");
+    const [holdSeconds, setHoldSeconds] = useState("");
+    const [perDay, setPerDay] = useState("");
+    const [notes, setNotes] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const startDosing = (intentId: number, label: string) => {
+        const existing = rows.find((r) => r.intentId === intentId);
+        setDosing({ intentId, label });
+        setSets(existing?.defaultSets != null ? String(existing.defaultSets) : "");
+        setReps(existing?.defaultReps != null ? String(existing.defaultReps) : "");
+        setHoldSeconds(existing?.defaultHoldSeconds != null ? String(existing.defaultHoldSeconds) : "");
+        setPerDay(existing?.defaultPerDay != null ? String(existing.defaultPerDay) : "");
+        setNotes(existing?.notes ?? "");
+        setError(null);
+        search.setQuery("");
+    };
+
+    const toIntOrNull = (v: string) => {
+        const n = Number(v.trim());
+        return v.trim() && Number.isFinite(n) ? Math.round(n) : null;
+    };
+
+    const submitDose = async () => {
+        if (!dosing) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const saved = await setExerciseLibraryEntry({
+                hospitalId, intentId: dosing.intentId,
+                defaultSets: toIntOrNull(sets), defaultReps: toIntOrNull(reps),
+                defaultHoldSeconds: toIntOrNull(holdSeconds), defaultPerDay: toIntOrNull(perDay),
+                notes, setBy: actorUserId,
+            });
+            const nextRow: ExerciseLibraryEntry = { ...saved, label: dosing.label };
+            onSaved([nextRow, ...rows.filter((r) => r.intentId !== dosing.intentId)]);
+            setDosing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that exercise.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const removeFromLibrary = async () => {
+        if (!dosing) return;
+        setSaving(true);
+        try {
+            await deleteExerciseLibraryEntry(hospitalId, dosing.intentId);
+            onSaved(rows.filter((r) => r.intentId !== dosing.intentId));
+            setDosing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not remove that exercise.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="blue" icon={<Dumbbell size={15} />} eyebrow="Exercise Library"
+            title="What this practice prescribes" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {!dosing && (
+                <div className="prac-modal-field">
+                    <IntentSearchField state={search} placeholder="Search an exercise to dose it…" />
+                </div>
+            )}
+
+            {dosing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setDosing(null)}>
+                        ← Different exercise
+                    </button>
+                    <div className="prac-med-info">
+                        <span className="prac-row-label">{dosing.label}</span>
+                    </div>
+                    <div className="prac-modal-field-row">
+                        <div className="prac-modal-field">
+                            <label>Sets</label>
+                            <input type="text" inputMode="numeric" value={sets} placeholder="e.g. 3"
+                                onChange={(e) => setSets(e.target.value)} autoFocus />
+                        </div>
+                        <div className="prac-modal-field">
+                            <label>Times per day</label>
+                            <input type="text" inputMode="numeric" value={perDay} placeholder="e.g. 1"
+                                onChange={(e) => setPerDay(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="prac-modal-field-row">
+                        <div className="prac-modal-field">
+                            <label>Reps</label>
+                            <input type="text" inputMode="numeric" value={reps} placeholder="e.g. 10"
+                                onChange={(e) => setReps(e.target.value)} />
+                        </div>
+                        <div className="prac-modal-field">
+                            <label>Or hold (sec)</label>
+                            <input type="text" inputMode="numeric" value={holdSeconds} placeholder="e.g. 30"
+                                onChange={(e) => setHoldSeconds(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="prac-modal-field">
+                        <label>Notes (optional)</label>
+                        <input type="text" value={notes} placeholder="e.g. hold at end range"
+                            onChange={(e) => setNotes(e.target.value)} />
+                    </div>
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button
+                        type="button" className="prac-modal-btn is-primary is-compact"
+                        disabled={saving} onClick={submitDose}
+                    >
+                        {saving ? "Saving…" : "Save to library"}
+                    </button>
+                    {rows.some((r) => r.intentId === dosing.intentId) && (
+                        <button type="button" className="prac-modal-btn is-danger" disabled={saving} onClick={removeFromLibrary}>
+                            <X size={14} /> Remove from library
+                        </button>
+                    )}
+                </>
+            ) : search.isSearching ? (
+                <div className="prac-search-results">
+                    {search.hits.length === 0 ? (
+                        <EmptyBlock
+                            art={<BlankExerciseArt />} fact={search.loading ? "Searching…" : `Nothing matches "${search.query.trim()}"`}
+                            next="Try the exercise's name."
+                        />
+                    ) : (
+                        search.hits.map((hit) => (
+                            <button
+                                key={hit.intentId} type="button" className="prac-hit-row"
+                                onClick={() => startDosing(hit.intentId, hit.label)}
+                            >
+                                <span className="prac-med-icon is-blue" aria-hidden="true"><Dumbbell size={13} /></span>
+                                <div className="prac-med-info">
+                                    <span className="prac-row-label is-catalogue">{hit.label}</span>
+                                    {rows.some((r) => r.intentId === hit.intentId) && (
+                                        <span className="prac-med-brands">Already in your library</span>
+                                    )}
+                                </div>
+                            </button>
+                        ))
+                    )}
+                </div>
+            ) : loading ? (
+                <SkelRows count={4} />
+            ) : rows.length === 0 ? (
+                <p className="prac-soon">Nothing saved yet. Search above to add your first one.</p>
+            ) : (
+                <div className="prac-modal-rows">
+                    {rows.map((ex) => (
+                        <button
+                            key={ex.intentId} type="button" className="prac-modal-row is-pick"
+                            onClick={() => startDosing(ex.intentId, ex.label)}
+                        >
+                            <div className="prac-med-info">
+                                <span className="prac-row-label">{ex.label}</span>
+                            </div>
+                            <span className="prac-quiet-pill is-alt">
+                                {formatDose({
+                                    sets: ex.defaultSets, reps: ex.defaultReps,
+                                    holdSeconds: ex.defaultHoldSeconds, perDay: ex.defaultPerDay,
+                                }) || "no dose saved"}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
+/**
+ * The clinic's non-medicine billing catalog — a flat, self-authored list
+ * (no global catalog to search, unlike medicine/exercise), so this is just
+ * add/edit/remove on `clinic_additional_charges` directly.
+ */
+/**
+ * A starting point, not a catalogue this clinic is expected to adopt
+ * wholesale — common non-medicine services across specialties, so the
+ * empty/near-empty list has something real to look at instead of one lone
+ * button (Anmol, 2026-09-20: "not like a government portal... this will
+ * look like detailed"). Off by default in the real sense: clicking one
+ * PRE-FILLS the add form with its name so the doctor still sets and
+ * confirms their own amount — nothing is saved to the clinic's actual
+ * catalog until they do.
+ */
+const SUGGESTED_CHARGES: { label: string; description: string }[] = [
+    { label: "Dressing", description: "A wound dressing or a dressing change" },
+    { label: "Suturing", description: "Wound closure — stitches" },
+    { label: "Minor procedure", description: "An in-clinic procedure beyond the consult itself" },
+    { label: "Injection administration", description: "Giving an injection, separate from the injection's own cost" },
+    { label: "Nebulization", description: "A nebulizer session given in-clinic" },
+    { label: "ECG", description: "An ECG taken and read in-clinic" },
+    { label: "Physiotherapy session", description: "One in-clinic therapy session" },
+    { label: "Vaccination administration", description: "Giving a vaccine, separate from the vaccine's own cost" },
+];
+
+function AdditionalChargesModal({
+    rows, hospitalId, onSaved, onClose,
+}: {
+    rows: AdditionalChargeCatalogEntry[];
+    hospitalId: string;
+    onSaved: (next: AdditionalChargeCatalogEntry[]) => void;
+    onClose: () => void;
+}) {
+    const [editing, setEditing] = useState<AdditionalChargeCatalogEntry | "new" | null>(null);
+    const [label, setLabel] = useState("");
+    const [amount, setAmount] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const startEdit = (entry: AdditionalChargeCatalogEntry | "new") => {
+        setEditing(entry);
+        setLabel(entry === "new" ? "" : entry.label);
+        setAmount(entry === "new" ? "" : String(entry.defaultAmount));
+        setError(null);
+    };
+
+    const startFromSuggestion = (s: { label: string; description: string }) => {
+        setEditing("new");
+        setLabel(s.label);
+        setAmount("");
+        setError(null);
+    };
+
+    const savedLabels = new Set(rows.map((r) => r.label.trim().toLowerCase()));
+    const suggestions = SUGGESTED_CHARGES.filter((s) => !savedLabels.has(s.label.toLowerCase())).slice(0, 5);
+
+    const submit = async () => {
+        if (!editing) return;
+        const amt = Number(amount);
+        if (!label.trim() || !Number.isFinite(amt) || amt < 0) {
+            setError("Enter a name and a valid amount.");
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            // Always UPDATE an existing row by id, never upsert-by-label for
+            // one — a rename through the label-keyed upsert would insert a
+            // fresh row under the new label and leave the old one behind
+            // (orphaned, invisible in this list, back on the next reload).
+            const saved = editing === "new"
+                ? await saveAdditionalChargeToCatalog({ hospitalId, label: label.trim(), defaultAmount: amt })
+                : await updateAdditionalCharge({ id: editing.id, label: label.trim(), defaultAmount: amt });
+            onSaved([saved, ...rows.filter((r) => r.id !== saved.id)]);
+            setEditing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save that charge.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const remove = async () => {
+        if (!editing || editing === "new") return;
+        setSaving(true);
+        try {
+            await deleteAdditionalCharge(editing.id);
+            onSaved(rows.filter((r) => r.id !== editing.id));
+            setEditing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not remove that charge.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="blue" icon={<Receipt size={15} />} eyebrow="Additional Charges"
+            title="What this clinic bills besides medicine" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {editing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setEditing(null)}>
+                        ← Back to the list
+                    </button>
+                    <div className="prac-modal-field">
+                        <label>Service</label>
+                        <input type="text" value={label} placeholder="e.g. Physio session, Dressing, Filling"
+                            onChange={(e) => setLabel(e.target.value)} autoFocus />
+                    </div>
+                    <div className="prac-modal-field">
+                        <label>Usual amount (₹)</label>
+                        <input type="text" inputMode="decimal" value={amount} placeholder="e.g. 300"
+                            onChange={(e) => setAmount(e.target.value)} />
+                    </div>
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button
+                        type="button" className="prac-modal-btn is-primary is-compact"
+                        disabled={!label.trim() || !amount.trim() || saving} onClick={submit}
+                    >
+                        {saving ? "Saving…" : "Save"}
+                    </button>
+                    {editing !== "new" && (
+                        <button type="button" className="prac-modal-btn is-danger" disabled={saving} onClick={remove}>
+                            <X size={14} /> Remove this charge
+                        </button>
+                    )}
+                </>
+            ) : (
+                <>
+                    <button type="button" className="prac-modal-btn is-primary is-compact" onClick={() => startEdit("new")}>
+                        <Plus size={14} /> Add a charge
+                    </button>
+
+                    {/* One continuous list — saved charges first, suggestions
+                        after, rather than two separately-boxed sections
+                        (Anmol, 2026-09-20: "these suggestions should appear
+                        in the main section" / "how much cramped they are
+                        looking"). `.prac-hit-row`'s 46px rows (not
+                        `.prac-modal-row`'s 38px, sized for a single line)
+                        give the label+description pair room to breathe. */}
+                    {rows.length === 0 && suggestions.length === 0 ? (
+                        <p className="prac-soon">Nothing saved yet. Add your first one above.</p>
+                    ) : (
+                        <div className="prac-modal-rows">
+                            {rows.map((c) => (
+                                <button
+                                    key={c.id} type="button" className="prac-hit-row"
+                                    onClick={() => startEdit(c)}
+                                >
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label">{c.label}</span>
+                                    </div>
+                                    <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
+                                </button>
+                            ))}
+                            {suggestions.length > 0 && (
+                                <div className="prac-modal-section-title" style={{ padding: "8px 2px 2px" }}>
+                                    <span>Suggested</span>
+                                    <span>one click starts the form, nothing saves yet</span>
+                                </div>
+                            )}
+                            {suggestions.map((s) => (
+                                <button
+                                    key={s.label} type="button" className="prac-hit-row"
+                                    onClick={() => startFromSuggestion(s)}
+                                >
+                                    <div className="prac-med-info">
+                                        <span className="prac-row-label is-catalogue">{s.label}</span>
+                                        <span className="prac-med-brands">{s.description}</span>
+                                    </div>
+                                    <span className="prac-hit-drill"><Plus size={11} /> Add</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </>
+            )}
+        </PracticeModal>
+    );
+}
+
+/**
+ * INTERVENTION PRICING — what this clinic charges per procedure family
+ * ("Cast"), with an optional price per configuration ("Above-elbow (long
+ * arm)" costing more than "Below-elbow"). Same list → edit shape as
+ * Additional Charges just above. Performed interventions with a price are
+ * pre-filled into Review's charges; planned ones never bill.
+ */
+export function InterventionPricingModal({
+    rows, hospitalId, actorUserId, onSaved, onClose,
+}: {
+    rows: InterventionPrice[];
+    hospitalId: string;
+    actorUserId: string | null;
+    onSaved: (next: InterventionPrice[]) => void;
+    onClose: () => void;
+}) {
+    const [editing, setEditing] = useState<PriceableFamily | null>(null);
+    /** config key ("" = base) → typed amount */
+    const [draft, setDraft] = useState<Record<string, string>>({});
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const pricesOf = (family: string) => rows.filter((r) => r.family === family);
+
+    const startEdit = (f: PriceableFamily) => {
+        const d: Record<string, string> = {};
+        for (const r of pricesOf(f.key)) d[r.configKey] = String(r.price);
+        setDraft(d);
+        setEditing(f);
+        setError(null);
+    };
+
+    const submit = async () => {
+        if (!editing) return;
+        const keys = ["", ...editing.configOptions];
+        for (const k of keys) {
+            const v = (draft[k] ?? "").trim();
+            if (v && !(Number.isFinite(Number(v)) && Number(v) >= 0)) {
+                setError(`Enter a valid amount${k ? ` for ${k}` : ""}.`);
+                return;
+            }
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const existing = pricesOf(editing.key);
+            for (const k of keys) {
+                const v = (draft[k] ?? "").trim();
+                const row = existing.find((r) => r.configKey === k);
+                if (v) {
+                    if (!row || row.price !== Number(v)) {
+                        await setInterventionPrice({ hospitalId, family: editing.key, configKey: k, price: Number(v), setBy: actorUserId });
+                    }
+                } else if (row) {
+                    await deleteInterventionPrice(row.id);
+                }
+            }
+            onSaved(await fetchInterventionPrices(hospitalId));
+            setEditing(null);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not save those prices.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <PracticeModal
+            accent="teal" icon={<IndianRupee size={15} />} eyebrow="Intervention Pricing"
+            title="What this clinic charges per procedure" onClose={onClose} wide
+            footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
+        >
+            {editing ? (
+                <>
+                    <button type="button" className="prac-modal-back" onClick={() => setEditing(null)}>
+                        ← Back to the list
+                    </button>
+                    <div className="prac-modal-field">
+                        <label>{editing.title} — price (₹)</label>
+                        <input type="text" inputMode="decimal" value={draft[""] ?? ""} placeholder="e.g. 800" autoFocus
+                            onChange={(e) => setDraft((d) => ({ ...d, "": e.target.value }))} />
+                    </div>
+                    {editing.configField && (
+                        <>
+                            <div className="prac-modal-section-title" style={{ padding: "8px 2px 2px" }}>
+                                <span>By {editing.configLabel?.toLowerCase()}</span>
+                                <span>optional — overrides the price above</span>
+                            </div>
+                            <div className="prac-cfg-list">
+                                {editing.configOptions.map((o) => (
+                                    <div key={o} className="prac-modal-field prac-cfg-row">
+                                        <label>{o}</label>
+                                        <input type="text" inputMode="decimal" value={draft[o] ?? ""}
+                                            placeholder={draft[""] ? `₹${draft[""]}` : "—"}
+                                            onChange={(e) => setDraft((d) => ({ ...d, [o]: e.target.value }))} />
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                    {error && <p className="prac-modal-error">{error}</p>}
+                    <button type="button" className="prac-modal-btn is-primary is-compact" disabled={saving} onClick={submit}>
+                        {saving ? "Saving…" : "Save"}
+                    </button>
+                </>
+            ) : (
+                <div className="prac-modal-rows">
+                    {PRICEABLE_FAMILIES.map((f) => {
+                        const own = pricesOf(f.key);
+                        const base = own.find((r) => r.configKey === "");
+                        const configs = own.filter((r) => r.configKey !== "").length;
+                        return (
+                            <button key={f.key} type="button" className="prac-hit-row" onClick={() => startEdit(f)}>
+                                <div className="prac-med-info">
+                                    <span className="prac-row-label">{f.title}</span>
+                                    {f.configLabel && (
+                                        <span className="prac-med-brands">
+                                            {configs > 0
+                                                ? `${configs} ${f.configLabel.toLowerCase()} price${configs === 1 ? "" : "s"}`
+                                                : `Can be priced by ${f.configLabel.toLowerCase()}`}
+                                        </span>
+                                    )}
+                                </div>
+                                <span className={`prac-quiet-pill${base || configs ? " is-alt" : ""}`}>
+                                    {base ? `₹${base.price.toFixed(0)}` : configs ? "By type" : "Not priced"}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </PracticeModal>
+    );
+}
+
 // ===========================================================================
 // THE PAGE
 // ===========================================================================
@@ -2037,6 +2847,7 @@ export function PracticePage({
     templates, onTemplatesChange, observables,
 }: Props) {
     const identity = useClinicalIdentity();
+    const navigate = useNavigate();
 
     const [brands, setBrands] = useState<ClinicBrandDefaultDetail[]>([]);
     const [brandsLoading, setBrandsLoading] = useState(true);
@@ -2061,6 +2872,38 @@ export function PracticePage({
     const [measurementsModalOpen, setMeasurementsModalOpen] = useState(false);
     const [manageTermsOpen, setManageTermsOpen] = useState(false);
 
+    // ── Medicine pricing (opt-in, see lib/db/medicinePricing.ts) ───────────
+    const [medicineBillingPolicy, setMedicineBillingPolicy] = useState<MedicineBillingPolicy>({
+        enabled: false, gstEnabled: false, gstPercent: 18,
+    });
+    const [priceRows, setPriceRows] = useState<ClinicMedicinePriceRow[]>([]);
+    const [priceRowsLoading, setPriceRowsLoading] = useState(true);
+    const [pricingModalOpen, setPricingModalOpen] = useState(false);
+
+    // ── Additional charges (opt-in, see lib/db/additionalCharges.ts) ───────
+    // The SAME catalog ReviewModal's Billing rail quietly reads/writes —
+    // this card is where a doctor actually manages it: add, reprice,
+    // rename, remove. No enable/disable toggle, same as medicine pricing
+    // above — an empty catalog IS the off state.
+    const [chargeCatalog, setChargeCatalog] = useState<AdditionalChargeCatalogEntry[]>([]);
+    const [chargeCatalogLoading, setChargeCatalogLoading] = useState(true);
+    const [chargesModalOpen, setChargesModalOpen] = useState(false);
+
+    // Intervention pricing (Phase 7) — only for the specialties whose
+    // interventions are configured families (casts, dressings, sutures…).
+    const pricesInterventions = specialty.id === "orthopedics" || specialty.id === "general_opd";
+    const [interventionPrices, setInterventionPrices] = useState<InterventionPrice[]>([]);
+    const [interventionPricesLoading, setInterventionPricesLoading] = useState(true);
+    const [interventionPricingOpen, setInterventionPricingOpen] = useState(false);
+
+    // ── Exercise library (opt-in, see lib/db/exerciseLibrary.ts) ───────────
+    // Physiotherapy's Practice-page analog of Preferred Medicines — which
+    // exercises this clinic actually prescribes, and the default dose a
+    // newly accepted line starts on.
+    const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryEntry[]>([]);
+    const [exerciseLibraryLoading, setExerciseLibraryLoading] = useState(true);
+    const [exerciseModalOpen, setExerciseModalOpen] = useState(false);
+
     // Every Practice-local overlay, ORed together — the same job
     // `App.tsx`'s `isAnyModalOpen` does for the consult workspace, scoped to
     // this page's own modals. `PreferredMedicinesCard` gates its Ctrl+K /
@@ -2069,7 +2912,7 @@ export function PracticePage({
     const anyModalOpen =
         labsModalOpen || addMedicineOpen != null || addedMedicinesOpen ||
         companionModalOpen || editingTemplate != null || measurementsModalOpen ||
-        manageTermsOpen;
+        manageTermsOpen || pricingModalOpen || chargesModalOpen || exerciseModalOpen;
 
     useEffect(() => {
         if (!identity.ready) return;
@@ -2096,7 +2939,43 @@ export function PracticePage({
             .then(setTerms)
             .catch(console.error)
             .finally(() => setTermsLoading(false));
+
+        fetchMedicineBillingPolicy(identity.hospitalId).then(setMedicineBillingPolicy).catch(console.error);
+        setPriceRowsLoading(true);
+        fetchClinicMedicinePriceList(identity.hospitalId)
+            .then(setPriceRows)
+            .catch(console.error)
+            .finally(() => setPriceRowsLoading(false));
+
+        setInterventionPricesLoading(true);
+        fetchInterventionPrices(identity.hospitalId)
+            .then(setInterventionPrices)
+            .catch(console.error)
+            .finally(() => setInterventionPricesLoading(false));
+
+        setChargeCatalogLoading(true);
+        fetchAdditionalChargesCatalog(identity.hospitalId)
+            .then(setChargeCatalog)
+            .catch(console.error)
+            .finally(() => setChargeCatalogLoading(false));
+
+        setExerciseLibraryLoading(true);
+        fetchExerciseLibrary(identity.hospitalId)
+            .then(setExerciseLibrary)
+            .catch(console.error)
+            .finally(() => setExerciseLibraryLoading(false));
     }, [identity.ready, identity.doctorId, identity.hospitalId]);
+
+    /** Sends the doctor to the admin console's own "Consultation fees" card
+     *  (which also carries the medicine billing toggle) and asks it to
+     *  scroll to + highlight that exact card on arrival — see
+     *  lib/ui/focusAnchor.ts. Practice never opens FeesModal itself: turning
+     *  the policy on/off is the admin console's job, not this page's
+     *  (lib/db/admin.ts's own header rule). */
+    const goEnableMedicineBilling = () => {
+        requestFocus("adm-card-fees");
+        navigate("/app/admin");
+    };
 
     const forgetTerm = (id: number) => {
         setTerms((curr) => curr.filter((t) => t.id !== id));
@@ -2133,6 +3012,33 @@ export function PracticePage({
         document.getElementById(`prac-card-${key}`)
             ?.scrollIntoView({ block: "center", behavior: reduceMotionForScroll ? "auto" : "smooth" });
     };
+
+    /**
+     * Clinical Defaults' three rows, reordered by which intent this
+     * facility's profile actually elevates (`specialty.primary` — the same
+     * field that decides Consult's own Primary Recommendation slot, see
+     * `specialtyProfile.ts`). No new cards for the first two rows, no new
+     * data: General OPD, Cardiology, Paediatrics, Gynaecology and
+     * Dermatology are all medicine-primary and see the default order
+     * (medicine, tools, extras) unchanged. Three exceptions:
+     *  - Diagnostics (test-primary): tools row (Preferred Labs leads it)
+     *    moves ahead of medicine.
+     *  - Physiotherapy (exercise-primary): the extras row leads — Exercise
+     *    Library is the one card in it that's actually exercise-specific —
+     *    ahead of tools, ahead of medicine.
+     *  - Dentistry: still medicine-primary (a dental consult still ends in
+     *    a prescription, see that profile's own comment), but a dentist
+     *    bills per procedure, not per medicine pack, so the extras row
+     *    (Additional Charges, doubling as a procedure price list) moves
+     *    ahead of tools — medicine still leads, dentistry's real distinction
+     *    is the second slot, not the first.
+     */
+    const rowOrder = ((): { medicine: number; tools: number; extras: number } => {
+        if (specialty.primary === "exercise") return { extras: 1, tools: 2, medicine: 3 };
+        if (specialty.primary === "test") return { tools: 1, medicine: 2, extras: 3 };
+        if (specialty.id === "dentistry") return { medicine: 1, extras: 2, tools: 3 };
+        return { medicine: 1, tools: 2, extras: 3 };
+    })();
 
     return (
         <div className="prac-page">
@@ -2219,7 +3125,15 @@ export function PracticePage({
                         </div>
                         <GroupHeadMark />
                     </div>
-                    <div className="prac-grid">
+                    {/* Medicine — three cards, one job apiece (preference,
+                        catalogue data-entry, pricing), consecutive and all
+                        teal on purpose: Anmol, 2026-09-19, "place all the
+                        three medicine related card consecutively... give
+                        them some green color hint... so that they feel like
+                        they are of the same category" — not merged into
+                        one card (three different mental models, cramming
+                        them into tabs would make each worse), just grouped. */}
+                    <div className="prac-grid" style={{ order: rowOrder.medicine }}>
                         <PreferredMedicinesCard
                             hospitalId={identity.hospitalId} brands={brands} brandsLoading={brandsLoading}
                             onBrandsChange={setBrands}
@@ -2227,6 +3141,98 @@ export function PracticePage({
                             anyModalOpen={anyModalOpen}
                         />
 
+                        <PracticeCard
+                            icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
+                            subtitle="Can't find the medicine you need? Add it to our database."
+                            action={
+                                <button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>
+                                    View added{addedMedicines.length > 0 ? ` (${addedMedicines.length})` : ""}
+                                </button>
+                            }
+                        >
+                            <EmptyBlock
+                                art={<BlankAddMedicineArt />}
+                                fact="Not in our database yet?"
+                                next="Submit its details and we'll review and add it."
+                                action={
+                                    <button type="button" className="prac-empty-action" onClick={() => setAddMedicineOpen({ initialName: "" })}>
+                                        <Plus size={14} /> Add new medicine
+                                    </button>
+                                }
+                            />
+                        </PracticeCard>
+
+                        <PracticeCard
+                            icon={<IndianRupee size={13} />} tone="teal" title="Medicine Pricing" fixed
+                            subtitle="What this clinic charges for the medicine it dispenses."
+                            count={medicineBillingPolicy.enabled ? priceRows.length : undefined}
+                            countTone="green"
+                            action={medicineBillingPolicy.enabled ? (
+                                <button type="button" className="prac-card-add" onClick={() => setPricingModalOpen(true)}>
+                                    <Plus size={12} /> Add price
+                                </button>
+                            ) : undefined}
+                            foot={medicineBillingPolicy.enabled && priceRows.length > 0 ? (
+                                <FootLink label="Manage pricing" onClick={() => setPricingModalOpen(true)} />
+                            ) : undefined}
+                        >
+                            {!medicineBillingPolicy.enabled ? (
+                                <EmptyBlock
+                                    art={<BlankPricingArt />}
+                                    fact="Medicine billing is off"
+                                    next="Turn it on from the admin console to price and bill the medicine this clinic dispenses — off changes nothing here."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={goEnableMedicineBilling}>
+                                            <IndianRupee size={14} /> Turn this on from Overview
+                                        </button>
+                                    }
+                                />
+                            ) : priceRowsLoading ? (
+                                <SkelRows count={3} />
+                            ) : priceRows.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankPricingArt />}
+                                    fact="No medicines priced yet"
+                                    next="Search a medicine and set what this clinic charges — a pack price and how many units the pack holds."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setPricingModalOpen(true)}>
+                                            <IndianRupee size={14} /> Add pricing
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {fillArtScale(priceRows.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(priceRows.length, 4)})` }}>
+                                            <BlankPricingArt />
+                                        </div>
+                                    )}
+                                    <CappedRows
+                                        items={priceRows} cap={4} rowH={MED_ROW_H} rowClassName="is-medicine"
+                                        showAllLabel="View all priced medicines" keyOf={(r) => r.medicineId}
+                                        renderRow={(row) => (
+                                            <button
+                                                type="button" className="prac-template-row"
+                                                onClick={() => setPricingModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{row.medicineName}</span>
+                                                    {row.manufacturer && <span className="prac-med-brands">{row.manufacturer}</span>}
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">₹{row.unitPrice.toFixed(2)}/unit</span>
+                                            </button>
+                                        )}
+                                    />
+                                </div>
+                            )}
+                        </PracticeCard>
+                    </div>
+
+                    {/* Clinical tools — investigations, saved setups, and the
+                        cross-intent suggestion engine (Companions pairs ANY
+                        intent type, not only medicine, so it belongs here
+                        and not in the teal group above). */}
+                    <div className="prac-grid" style={{ order: rowOrder.tools }}>
                         <PracticeCard
                             id="labs"
                             icon={<FlaskConical size={14} />} tone="slate" title="Preferred Labs" count={preferredLabs.length} fixed
@@ -2238,7 +3244,11 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : preferredLabs.length > 0 ? (
                                 <div className="prac-fill">
-                                    {preferredLabs.length <= 2 && <div className="prac-fill-art"><BlankLabArt /></div>}
+                                    {fillArtScale(preferredLabs.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(preferredLabs.length, 4)})` }}>
+                                            <BlankLabArt />
+                                        </div>
+                                    )}
                                     {/* Two-line rows (icon + name + a real subtitle), same
                                         shape Templates/Companions already use — a bare
                                         34px name-and-remove line was reading as
@@ -2286,7 +3296,11 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : templates.length > 0 ? (
                                 <div className="prac-fill">
-                                    {templates.length <= 3 && <div className="prac-fill-art"><BlankTemplateArt /></div>}
+                                    {fillArtScale(templates.length, 3) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(templates.length, 3)})` }}>
+                                            <BlankTemplateArt />
+                                        </div>
+                                    )}
                                     <CappedRows
                                         items={templates} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
                                         showAllLabel="View all templates" keyOf={(t) => t.id}
@@ -2310,29 +3324,6 @@ export function PracticePage({
                                 />
                             )}
                         </PracticeCard>
-                    </div>
-
-                    <div className="prac-grid">
-                        <PracticeCard
-                            icon={<Plus size={14} />} tone="teal" title="Add New Medicine" fixed
-                            subtitle="Can't find the medicine you need? Add it to our database."
-                            action={
-                                <button type="button" className="prac-card-manage" onClick={() => setAddedMedicinesOpen(true)}>
-                                    View added{addedMedicines.length > 0 ? ` (${addedMedicines.length})` : ""}
-                                </button>
-                            }
-                        >
-                            <EmptyBlock
-                                art={<BlankAddMedicineArt />}
-                                fact="Not in our database yet?"
-                                next="Submit its details and we'll review and add it."
-                                action={
-                                    <button type="button" className="prac-empty-action" onClick={() => setAddMedicineOpen({ initialName: "" })}>
-                                        <Plus size={14} /> Add new medicine
-                                    </button>
-                                }
-                            />
-                        </PracticeCard>
 
                         <PracticeCard
                             id="companions"
@@ -2346,7 +3337,11 @@ export function PracticePage({
                                 <SkelRows count={3} />
                             ) : companions.length > 0 ? (
                                 <div className="prac-fill">
-                                    {companions.length <= 2 && <div className="prac-fill-art"><BlankCompanionArt /></div>}
+                                    {fillArtScale(companions.length, 3) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(companions.length, 3)})` }}>
+                                            <BlankCompanionArt />
+                                        </div>
+                                    )}
                                     <CappedRows
                                         items={companions} cap={3} rowH={MED_ROW_H} rowClassName="is-medicine"
                                         showAllLabel="View all companions" hideTrigger
@@ -2379,33 +3374,193 @@ export function PracticePage({
                                 />
                             )}
                         </PracticeCard>
+                    </div>
+
+                    {/* Extras — physiotherapy's own preference list and the
+                        clinic's non-medicine billing catalog, paired rather
+                        than each floating full-width alone (the same rule
+                        "Your Clinical Terms"/"Related Settings" already
+                        follow below). Blue on both: `PracticeModalAccent`'s
+                        "a declared clinic default" tone — a saved dose or a
+                        saved charge is exactly that, neither the medicine
+                        group's own teal nor the doctor-authored violet the
+                        tools row's Templates/Companions carry. */}
+                    <div className={`prac-grid${pricesInterventions ? "" : " is-2col"}`} style={{ order: rowOrder.extras }}>
+                        <PracticeCard
+                            id="exercises"
+                            icon={<Dumbbell size={14} />} tone="blue" title="Exercise Library" count={exerciseLibrary.length} fixed
+                            subtitle="Exercises this practice prescribes often, and the dose they start on."
+                            action={
+                                <button type="button" className="prac-card-add" onClick={() => setExerciseModalOpen(true)}>
+                                    <Plus size={12} /> Add exercise
+                                </button>
+                            }
+                            foot={exerciseLibrary.length > 0 ? (
+                                <FootLink label="Manage library" onClick={() => setExerciseModalOpen(true)} />
+                            ) : undefined}
+                        >
+                            {exerciseLibraryLoading ? (
+                                <SkelRows count={3} />
+                            ) : exerciseLibrary.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankExerciseArt />}
+                                    fact="No exercises saved yet"
+                                    next="Search an exercise and save the dose you usually start it on."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setExerciseModalOpen(true)}>
+                                            <Dumbbell size={14} /> Add to library
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {fillArtScale(exerciseLibrary.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(exerciseLibrary.length, 4)})` }}>
+                                            <BlankExerciseArt />
+                                        </div>
+                                    )}
+                                    <CappedRows
+                                        items={exerciseLibrary} cap={4} rowH={ROW_H}
+                                        showAllLabel="View all exercises" keyOf={(ex) => ex.intentId}
+                                        renderRow={(ex) => (
+                                            <button
+                                                type="button" className="prac-template-row"
+                                                onClick={() => setExerciseModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{ex.label}</span>
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">
+                                                    {formatDose({
+                                                        sets: ex.defaultSets, reps: ex.defaultReps,
+                                                        holdSeconds: ex.defaultHoldSeconds, perDay: ex.defaultPerDay,
+                                                    }) || "no dose saved"}
+                                                </span>
+                                            </button>
+                                        )}
+                                    />
+                                </div>
+                            )}
+                        </PracticeCard>
 
                         <PracticeCard
-                            icon={<SlidersHorizontal size={13} />} tone="slate" title="Consultation Defaults" fixed
-                            subtitle="How Cortex opens a consultation."
+                            id="charges"
+                            icon={<Receipt size={14} />} tone="blue" title="Additional Charges" count={chargeCatalog.length} fixed
+                            subtitle="Non-medicine services this clinic bills for — a session, a dressing, a procedure."
+                            action={
+                                <button type="button" className="prac-card-add" onClick={() => setChargesModalOpen(true)}>
+                                    <Plus size={12} /> Add charge
+                                </button>
+                            }
+                            foot={chargeCatalog.length > 0 ? (
+                                <FootLink label="Manage charges" onClick={() => setChargesModalOpen(true)} />
+                            ) : undefined}
                         >
-                            <div className="prac-fill">
-                                <div className="prac-fill-art"><BlankConsultDefaultsArt /></div>
-                                <div className="prac-setting-list">
-                                    <button type="button" className="prac-setting-row" onClick={() => onNavigate("settings")}>
-                                        <div className="prac-med-info">
-                                            <span className="prac-row-label">Consultation profile</span>
-                                            <span className="prac-med-brands">Which chart Cortex opens with</span>
-                                            <span className="prac-setting-link">Change profile <ChevronRight size={11} /></span>
+                            {chargeCatalogLoading ? (
+                                <SkelRows count={3} />
+                            ) : chargeCatalog.length === 0 ? (
+                                <EmptyBlock
+                                    art={<BlankChargesArt />}
+                                    fact="No charges saved yet"
+                                    next="Add a service and the amount you usually charge for it — offered again at review time."
+                                    action={
+                                        <button type="button" className="prac-empty-action" onClick={() => setChargesModalOpen(true)}>
+                                            <Receipt size={14} /> Add a charge
+                                        </button>
+                                    }
+                                />
+                            ) : (
+                                <div className="prac-fill">
+                                    {fillArtScale(chargeCatalog.length, 4) != null && (
+                                        <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(chargeCatalog.length, 4)})` }}>
+                                            <BlankChargesArt />
                                         </div>
-                                        <span className="prac-quiet-pill">{specialty.label}</span>
-                                    </button>
-                                    <button type="button" className="prac-setting-row" onClick={() => setMeasurementsModalOpen(true)}>
-                                        <div className="prac-med-info">
-                                            <span className="prac-row-label">Default measurements</span>
-                                            <span className="prac-med-brands">Shown when a consult opens</span>
-                                            <span className="prac-setting-link">Configure measurements <ChevronRight size={11} /></span>
-                                        </div>
-                                        <span className="prac-quiet-pill is-alt">{measureCount} of {specialty.measurements.length}</span>
-                                    </button>
+                                    )}
+                                    <CappedRows
+                                        items={chargeCatalog} cap={4} rowH={ROW_H}
+                                        showAllLabel="View all charges" keyOf={(c) => c.id}
+                                        renderRow={(c) => (
+                                            <button
+                                                type="button" className="prac-template-row"
+                                                onClick={() => setChargesModalOpen(true)}
+                                            >
+                                                <div className="prac-med-info">
+                                                    <span className="prac-row-label">{c.label}</span>
+                                                </div>
+                                                <span className="prac-quiet-pill is-alt">₹{c.defaultAmount.toFixed(0)}</span>
+                                            </button>
+                                        )}
+                                    />
                                 </div>
-                            </div>
+                            )}
                         </PracticeCard>
+
+                        {pricesInterventions && (() => {
+                            const pricedFamilies = PRICEABLE_FAMILIES
+                                .map((f) => ({ f, own: interventionPrices.filter((r) => r.family === f.key) }))
+                                .filter((x) => x.own.length > 0);
+                            return (
+                                <PracticeCard
+                                    id="intervention-pricing"
+                                    icon={<IndianRupee size={13} />} tone="teal" title="Intervention Pricing"
+                                    count={pricedFamilies.length} countTone="green" fixed
+                                    subtitle="What this clinic charges for casts, dressings, sutures and other procedures."
+                                    action={
+                                        <button type="button" className="prac-card-add" onClick={() => setInterventionPricingOpen(true)}>
+                                            <Plus size={12} /> Set price
+                                        </button>
+                                    }
+                                    foot={pricedFamilies.length > 0 ? (
+                                        <FootLink label="Manage pricing" onClick={() => setInterventionPricingOpen(true)} />
+                                    ) : undefined}
+                                >
+                                    {interventionPricesLoading ? (
+                                        <SkelRows count={3} />
+                                    ) : pricedFamilies.length === 0 ? (
+                                        <EmptyBlock
+                                            art={<BlankPricingArt />}
+                                            fact="No procedures priced yet"
+                                            next="Set a price per procedure — what was performed is added to the bill at review, and you can still change it there."
+                                            action={
+                                                <button type="button" className="prac-empty-action" onClick={() => setInterventionPricingOpen(true)}>
+                                                    <IndianRupee size={14} /> Set prices
+                                                </button>
+                                            }
+                                        />
+                                    ) : (
+                                        <div className="prac-fill">
+                                            {fillArtScale(pricedFamilies.length, 4) != null && (
+                                                <div className="prac-fill-art" style={{ transform: `scale(${fillArtScale(pricedFamilies.length, 4)})` }}>
+                                                    <BlankPricingArt />
+                                                </div>
+                                            )}
+                                            <CappedRows
+                                                items={pricedFamilies} cap={4} rowH={ROW_H}
+                                                showAllLabel="View all prices" keyOf={(x) => x.f.key}
+                                                renderRow={({ f, own }) => {
+                                                    const base = own.find((r) => r.configKey === "");
+                                                    const configs = own.length - (base ? 1 : 0);
+                                                    return (
+                                                        <button
+                                                            type="button" className="prac-template-row"
+                                                            onClick={() => setInterventionPricingOpen(true)}
+                                                        >
+                                                            <div className="prac-med-info">
+                                                                <span className="prac-row-label">{f.title}</span>
+                                                            </div>
+                                                            <span className="prac-quiet-pill is-alt">
+                                                                {base ? `₹${base.price.toFixed(0)}` : "By type"}
+                                                                {configs > 0 && base ? ` · +${configs}` : ""}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                </PracticeCard>
+                            );
+                        })()}
                     </div>
                 </div>
 
@@ -2465,6 +3620,40 @@ export function PracticePage({
                         subtitle="Other settings that are often used alongside these."
                     >
                         <div className="prac-settings-grid">
+                            {/* Moved here from the old "Consultation Defaults" card
+                                2026-09-19 — both rows were pure shortcuts to content
+                                owned elsewhere (Settings' own profile picker, the
+                                measurements modal this page already opens), the
+                                exact shape every other tile here already is; that
+                                card's own slot now carries Medicine Pricing
+                                instead. */}
+                            <button type="button" className="prac-settings-tile" onClick={() => onNavigate("settings")}>
+                                {/* The specialty's own mark, when it has one — see
+                                    specialtyIcons.tsx. Falls back to the plain
+                                    slate settings icon for every profile that
+                                    hasn't earned a mark yet, same "nothing
+                                    rather than a fake placeholder" rule that
+                                    file documents. No slate background behind
+                                    a mark that already carries its own fill. */}
+                                {hasSpecialtyMark(specialty.id) ? (
+                                    <span className="prac-settings-icon"><SpecialtyMark specialtyId={specialty.id} size={20} /></span>
+                                ) : (
+                                    <span className="prac-settings-icon is-slate"><SlidersHorizontal size={15} /></span>
+                                )}
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Consultation Profile</span>
+                                    <span className="prac-med-brands">{specialty.label} — which chart Cortex opens with</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
+                            <button type="button" className="prac-settings-tile" onClick={() => setMeasurementsModalOpen(true)}>
+                                <span className="prac-settings-icon is-slate"><Layers size={15} /></span>
+                                <span className="prac-med-info">
+                                    <span className="prac-row-label">Default Measurements</span>
+                                    <span className="prac-med-brands">{measureCount} of {specialty.measurements.length} shown when a consult opens</span>
+                                </span>
+                                <ChevronRight size={13} className="prac-settings-chevron" />
+                            </button>
                             <button type="button" className="prac-settings-tile" onClick={() => onNavigate("clinic")}>
                                 <span className="prac-settings-icon is-violet"><Settings size={15} /></span>
                                 <span className="prac-med-info">
@@ -2565,6 +3754,41 @@ export function PracticePage({
                     terms={terms}
                     onForget={forgetTerm}
                     onClose={() => setManageTermsOpen(false)}
+                />
+            )}
+            {pricingModalOpen && (
+                <MedicinePricingModal
+                    hospitalId={identity.hospitalId} actorUserId={identity.userId}
+                    rows={priceRows} loading={priceRowsLoading}
+                    onSaved={setPriceRows}
+                    onClose={() => setPricingModalOpen(false)}
+                />
+            )}
+
+            {exerciseModalOpen && (
+                <ExerciseLibraryModal
+                    hospitalId={identity.hospitalId} actorUserId={identity.userId}
+                    rows={exerciseLibrary} loading={exerciseLibraryLoading}
+                    onSaved={setExerciseLibrary}
+                    onClose={() => setExerciseModalOpen(false)}
+                />
+            )}
+
+            {interventionPricingOpen && (
+                <InterventionPricingModal
+                    hospitalId={identity.hospitalId} actorUserId={identity.userId}
+                    rows={interventionPrices}
+                    onSaved={setInterventionPrices}
+                    onClose={() => setInterventionPricingOpen(false)}
+                />
+            )}
+
+            {chargesModalOpen && (
+                <AdditionalChargesModal
+                    hospitalId={identity.hospitalId}
+                    rows={chargeCatalog}
+                    onSaved={setChargeCatalog}
+                    onClose={() => setChargesModalOpen(false)}
                 />
             )}
         </div>

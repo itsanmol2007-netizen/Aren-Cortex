@@ -46,11 +46,17 @@
 // ---------------------------------------------------------------------------
 
 import { useRef } from "react";
-import { Activity, Calendar, Dumbbell, MapPin, Pill, Quote, X, RefreshCw } from "lucide-react";
+import { Activity, Calendar, Dumbbell, FlaskConical, MapPin, Pill, Quote, Stethoscope, Wrench, X, RefreshCw } from "lucide-react";
 import { useOverlayFocus } from "../hooks/useOverlayFocus";
 import type { RealVisit } from "../lib/db";
 import { freqSlotToLabel } from "../lib/db";
 import { FIELD_BY_KEY, type MeasureFieldKey } from "../features/consult/measures";
+import { dashText } from "../lib/clinicalText";
+
+/** `--rail-w` (60px, sidebar.css) plus a small gutter — the dark tone's own
+ *  left clamp keeps clear of the nav rail's actual footprint rather than
+ *  relying on z-index, which the rail deliberately wins (see below). */
+const RAIL_CLEARANCE = 76;
 
 export function formatVisitDate(isoString: string): string {
     const d = new Date(isoString);
@@ -107,6 +113,8 @@ function recordedMeasurements(vitals: RealVisit["vitals"]): { label: string; uni
 export function visitHasContent(visit: RealVisit): boolean {
     return (
         !!visit.isStub ||
+        (visit.assessments?.length ?? 0) > 0 ||
+        (visit.procedures?.length ?? 0) > 0 ||
         visit.symptoms.length > 0 ||
         visit.findings.length > 0 ||
         visit.medicines.length > 0 ||
@@ -158,6 +166,41 @@ export function PastVisitCard({
 
     const measurements = recordedMeasurements(visit.vitals);
 
+    // ── What this visit was ABOUT, most specific first (2026-09-25) ──────
+    // An orthopaedic visit reads by its assessment and what was done
+    // ("Fracture - Right knee, displaced", "Cast - Right knee, backslab"),
+    // not by the symptom that brought the patient in.
+    const assessments = visit.assessments ?? [];
+    const procedures = visit.procedures ?? [];
+    const done = procedures.filter((p) => p.status === "performed");
+    const planned = procedures.filter((p) => p.status === "planned");
+    // Found on examination, WITH where ("Joint swelling / effusion - Right
+    // knee") when the visit recorded it; the legacy names otherwise.
+    const found = [
+        ...(visit.sitedFindings?.length ? visit.sitedFindings : visit.findings.map((f) => f.name)),
+        ...(visit.neuro ?? []),
+    ];
+    // A visit without structured assessments keeps its written diagnosis —
+    // minus anything that is already one of its own findings or complaints,
+    // which the saved text also carries.
+    const onRecord = new Set([...visit.symptoms, ...found].map((x) => x.toLowerCase().split(" - ")[0]));
+    const diagnosisText = assessments.length ? [] : (visit.diagnoses ?? []).filter((d) => !onRecord.has(d.toLowerCase().split(" - ")[0]));
+    const exercises = visit.exercises?.length ? visit.exercises : visit.exercise_names;
+    const headline = assessments.length ? assessments[0].short
+        : diagnosisText.length ? diagnosisText[0]
+            : done.length ? dashText(done[0].text).split(",")[0]
+                : null;
+    // One diagnosis that IS the headline is not said twice; an assessment
+    // with detail ("…, displaced") or several are.
+    const dxLines = assessments.length ? assessments.map((a) => a.text) : diagnosisText;
+    const showDx = dxLines.length > 1 || (dxLines.length === 1 && dxLines[0] !== headline);
+    const dueText = (d: string | null) => d
+        ? `Due ${new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+        : "Planned";
+    // Sections are separated by a rule, never led by one.
+    let sections = 0;
+    const rule = () => (sections++ > 0 ? <hr className="pv-divider" /> : null);
+
     return (
         <div className={`pv-overlay${light ? " is-light" : ""}`} onClick={onClose}>
             <div
@@ -179,7 +222,17 @@ export function PastVisitCard({
                 style={light ? undefined : {
                     position: "fixed",
                     top: 90,
-                    left: Math.min(Math.max(x - 210, 12), window.innerWidth - 432),
+                    // The lower clamp used to be a flat 12px — enough room from
+                    // the viewport edge, but not from the nav rail (`--rail-w`,
+                    // 60px), which sits at z-index 10000 ABOVE every modal on
+                    // purpose (sidebar.css: "Above the modals... toasts still
+                    // win"). A chip clicked near the left edge clamped this
+                    // card's left portion right under the rail's own opaque
+                    // surface, clipping the text it covered ("Calpol" reading
+                    // as "o...") rather than a z-index fight this card cannot
+                    // win. RAIL_CLEARANCE keeps the card entirely to the
+                    // rail's right instead.
+                    left: Math.min(Math.max(x - 210, RAIL_CLEARANCE), window.innerWidth - 432),
                 }}
             >
                 <div className="pv-stripe" aria-hidden="true" />
@@ -199,7 +252,9 @@ export function PastVisitCard({
                                     back to a title that says nothing (see
                                     `visitTypeLabel` in features/patients/visitStatus.ts
                                     for the same ordering, badge-shaped). */}
-                                {visit.medicines.length > 0
+                                {headline
+                                    ? headline
+                                    : visit.medicines.length > 0
                                     ? `${visit.medicines.length} medicine${visit.medicines.length > 1 ? "s" : ""} prescribed`
                                     : visit.exercise_names.length > 0
                                         ? `${visit.exercise_names.length} exercise${visit.exercise_names.length > 1 ? "s" : ""} prescribed`
@@ -229,14 +284,99 @@ export function PastVisitCard({
                 </div>
 
                 <div className="pv-body">
-                    {visit.symptoms.length > 0 && (
+                    {showDx && (
                         <div>
-                            <p className="pv-section-label">Symptoms noted</p>
-                            <div className="pv-chips">
-                                {visit.symptoms.map((s) => (
-                                    <span key={s} className="pv-chip">{s}</span>
+                            {rule()}
+                            <p className="pv-section-label pv-label-icon">
+                                <Stethoscope size={10} /> {assessments.length ? "Assessment" : "Diagnosis"}
+                            </p>
+                            <div className="pv-rows">
+                                {dxLines.map((d, i) => (
+                                    <div key={i} className="pv-line is-dx">{d}</div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {procedures.length > 0 && (
+                        <div>
+                            {rule()}
+                            <p className="pv-section-label pv-label-icon">
+                                <Wrench size={10} /> Procedures
+                            </p>
+                            <div className="pv-rows">
+                                {done.map((p) => (
+                                    <div key={p.id} className="pv-line">
+                                        <span>{p.text}</span>
+                                        <em className="pv-status is-done">{p.removesId ? "Removed" : "Done"}</em>
+                                    </div>
+                                ))}
+                                {planned.map((p) => (
+                                    <div key={p.id} className="pv-line">
+                                        <span>{p.text}</span>
+                                        <em className="pv-status is-planned">{dueText(p.dueDate)}</em>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {visit.tests.length > 0 && (
+                        <div>
+                            {rule()}
+                            <p className="pv-section-label pv-label-icon">
+                                <FlaskConical size={10} /> Investigations ordered
+                            </p>
+                            {visit.orders?.length ? (
+                                // Each order with its outcome: the result once
+                                // one is recorded, "Result awaited" until then.
+                                <div className="pv-rows">
+                                    {visit.orders.map((o) => (
+                                        <div key={o.id} className="pv-line pv-order">
+                                            <span>
+                                                {o.name}
+                                                {o.resultText && <small className="pv-result">{o.resultText}</small>}
+                                            </span>
+                                            <em className={`pv-status ${o.resultText ? "is-done" : "is-planned"}`}>
+                                                {o.resultText ? "Result in" : "Result awaited"}
+                                            </em>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="pv-chips">
+                                    {visit.tests.map((t) => (
+                                        <span key={t} className="pv-chip">{t}</span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {(visit.symptoms.length > 0 || found.length > 0) && (
+                        <div>
+                            {rule()}
+                            {visit.symptoms.length > 0 && (
+                                <>
+                                    <p className="pv-section-label">Reported</p>
+                                    <div className="pv-chips">
+                                        {visit.symptoms.map((s) => (
+                                            <span key={s} className="pv-chip">{s}</span>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                            {found.length > 0 && (
+                                <div style={{ marginTop: visit.symptoms.length > 0 ? 10 : 0 }}>
+                                    <p className="pv-section-label">On examination</p>
+                                    <div className="pv-chips">
+                                        {found.map((f) => (
+                                            // An intact neurovascular check is a normal finding.
+                                            <span key={f} className={`pv-chip ${f.startsWith("Neurovascular intact") ? "normal" : "abnormal"}`}>{f}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -244,54 +384,34 @@ export function PastVisitCard({
                         (visit_story). Not every specialty records one, so this
                         only shows on the visits that actually have it. */}
                     {(visit.story_mechanism || visit.story_duration) && (
-                        <>
-                            {visit.symptoms.length > 0 && <hr className="pv-divider" />}
-                            <div>
-                                <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                    <Quote size={10} style={{ opacity: 0.5 }} />
-                                    Patient&apos;s account
+                        <div>
+                            {rule()}
+                            <p className="pv-section-label pv-label-icon">
+                                <Quote size={10} /> Patient&apos;s account
+                            </p>
+                            {visit.story_duration && (
+                                <p className="pv-med-detail" style={{ marginBottom: visit.story_mechanism ? 3 : 0 }}>
+                                    Going on {visit.story_duration}
                                 </p>
-                                {visit.story_duration && (
-                                    <p className="pv-med-detail" style={{ marginBottom: visit.story_mechanism ? 3 : 0 }}>
-                                        Going on {visit.story_duration}
-                                    </p>
-                                )}
-                                {visit.story_mechanism && (
-                                    <p className="pv-med-name" style={{ fontWeight: 500, lineHeight: 1.4 }}>
-                                        {visit.story_mechanism}
-                                    </p>
-                                )}
-                            </div>
-                        </>
+                            )}
+                            {visit.story_mechanism && (
+                                <p className="pv-med-name" style={{ fontWeight: 500, lineHeight: 1.4 }}>
+                                    {visit.story_mechanism}
+                                </p>
+                            )}
+                        </div>
                     )}
 
-                    {visit.findings.length > 0 && (
-                        <>
-                            <hr className="pv-divider" />
-                            <div>
-                                <p className="pv-section-label">Clinical findings</p>
-                                <div className="pv-chips">
-                                    {visit.findings.map((f) => (
-                                        <span key={f.name} className={`pv-chip ${f.is_abnormal ? "abnormal" : "normal"}`}>
-                                            {f.name}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {/* Body site + functional limitation — physiotherapy's own
-                        record of WHERE and WHAT, alongside the generic findings
-                        above rather than replacing them. */}
-                    {(visit.body_sites.length > 0 || visit.impairment_names.length > 0) && (
-                        <>
-                            <hr className="pv-divider" />
-                            {visit.body_sites.length > 0 && (
+                    {/* Body sites marked on the map. Once findings carry their
+                        own place the site is already in them, so the bare
+                        list only shows for a visit that has no such findings. */}
+                    {((visit.body_sites.length > 0 && !visit.sitedFindings?.length) || visit.impairment_names.length > 0) && (
+                        <div>
+                            {rule()}
+                            {visit.body_sites.length > 0 && !visit.sitedFindings?.length && (
                                 <div>
-                                    <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                        <MapPin size={10} style={{ opacity: 0.5 }} />
-                                        Body site
+                                    <p className="pv-section-label pv-label-icon">
+                                        <MapPin size={10} /> Body site
                                     </p>
                                     <div className="pv-chips">
                                         {visit.body_sites.map((s) => (
@@ -301,10 +421,9 @@ export function PastVisitCard({
                                 </div>
                             )}
                             {visit.impairment_names.length > 0 && (
-                                <div style={{ marginTop: visit.body_sites.length > 0 ? 10 : 0 }}>
-                                    <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                        <Activity size={10} style={{ opacity: 0.5 }} />
-                                        Functional limitation
+                                <div style={{ marginTop: visit.body_sites.length > 0 && !visit.sitedFindings?.length ? 10 : 0 }}>
+                                    <p className="pv-section-label pv-label-icon">
+                                        <Activity size={10} /> Functional limitation
                                     </p>
                                     <div className="pv-chips">
                                         {visit.impairment_names.map((s) => (
@@ -313,47 +432,41 @@ export function PastVisitCard({
                                     </div>
                                 </div>
                             )}
-                        </>
+                        </div>
                     )}
 
                     {visit.medicines.length > 0 && (
-                        <>
-                            <hr className="pv-divider" />
-                            <div>
-                                <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                    <Pill size={10} style={{ opacity: 0.5 }} />
-                                    Medicines prescribed
-                                </p>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                    {visit.medicines.map((med, i) => {
-                                        const detail = buildMedDetail(med);
-                                        return (
-                                            <div key={i} className="pv-med-row">
-                                                <span className="pv-med-name">{med.name}</span>
-                                                {detail && <span className="pv-med-detail">{detail}</span>}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                        <div>
+                            {rule()}
+                            <p className="pv-section-label pv-label-icon">
+                                <Pill size={10} /> Medicines prescribed
+                            </p>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {visit.medicines.map((med, i) => {
+                                    const detail = buildMedDetail(med);
+                                    return (
+                                        <div key={i} className="pv-med-row">
+                                            <span className="pv-med-name">{med.name}</span>
+                                            {detail && <span className="pv-med-detail">{detail}</span>}
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        </>
+                        </div>
                     )}
 
-                    {visit.exercise_names.length > 0 && (
-                        <>
-                            <hr className="pv-divider" />
-                            <div>
-                                <p className="pv-section-label" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                    <Dumbbell size={10} style={{ opacity: 0.5 }} />
-                                    Exercises prescribed
-                                </p>
-                                <div className="pv-chips">
-                                    {visit.exercise_names.map((e, i) => (
-                                        <span key={`${e}-${i}`} className="pv-chip normal">{e}</span>
-                                    ))}
-                                </div>
+                    {exercises.length > 0 && (
+                        <div>
+                            {rule()}
+                            <p className="pv-section-label pv-label-icon">
+                                <Dumbbell size={10} /> Exercises prescribed
+                            </p>
+                            <div className="pv-rows">
+                                {exercises.map((e, i) => (
+                                    <div key={`${e}-${i}`} className="pv-line">{e}</div>
+                                ))}
                             </div>
-                        </>
+                        </div>
                     )}
 
                     {/* Every number actually recorded this visit — the same
@@ -361,19 +474,17 @@ export function PastVisitCard({
                         reading that shows up in a trend card can always be
                         traced back to the visit it came from here. */}
                     {measurements.length > 0 && (
-                        <>
-                            <hr className="pv-divider" />
-                            <div>
-                                <p className="pv-section-label">Measurements recorded</p>
-                                <div className="pv-chips">
-                                    {measurements.map((m) => (
-                                        <span key={m.label} className="pv-chip">
-                                            {m.label}: {m.value}{m.unit && ` ${m.unit}`}
-                                        </span>
-                                    ))}
-                                </div>
+                        <div>
+                            {rule()}
+                            <p className="pv-section-label">Measurements recorded</p>
+                            <div className="pv-chips">
+                                {measurements.map((m) => (
+                                    <span key={m.label} className="pv-chip">
+                                        {m.label}: {m.value}{m.unit && ` ${m.unit}`}
+                                    </span>
+                                ))}
                             </div>
-                        </>
+                        </div>
                     )}
 
                     {!visitHasContent(visit) && (

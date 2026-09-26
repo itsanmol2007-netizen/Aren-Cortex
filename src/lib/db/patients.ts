@@ -4,6 +4,10 @@ import { siteLabel, type BodyAspect, type BodyRegion, type BodySide } from "../b
 import { visitStatusKind } from "../../features/patients/visitStatus";
 import type { ConfirmedPayment } from "./payments";
 import { readThroughValue, resolveMirrorIdentity } from "../offline/localMirror";
+import { clinicalSiteLabel, normalizeSite, siteFromRegionKey, type SiteRef } from "../body/clinicalSite";
+import { dashText } from "../clinicalText";
+import { formatLine } from "../../features/consult/exercisePlan";
+import { latestStates, type StateEvent } from "./clinicalState";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 export type DBPatient = {
@@ -818,7 +822,122 @@ export type RealVisit = {
     story_mechanism: string | null;
     advice_notes?: string | null;
     isStub?: boolean;
+    // ── The orthopaedic record (2026-09-25) ────────────────────────────────
+    // Optional because the durable cache can hand back a visit stored by an
+    // older build; every reader treats absent as empty.
+    /** "Fracture - Right knee, displaced" — the structured assessments */
+    assessments?: VisitAssessment[];
+    /** casts, splints, sutures, reductions… done at or planned by this visit */
+    procedures?: VisitProcedure[];
+    /** local findings WITH where they were found ("Joint swelling / effusion - Right knee") */
+    sitedFindings?: string[];
+    /** exercises with their dose, as printed ("Straight leg raise (Right) - 3 × 10") */
+    exercises?: string[];
+    /** investigations ordered, each with its result once one is recorded */
+    orders?: VisitOrder[];
+    /** pain scored at a joint ("Right wrist", 7) — the ortho / physio exam */
+    sitePain?: { site: string; value: number }[];
+    /** the neurovascular check, per site ("Neurovascular intact - Right wrist",
+     *  "Sensation altered - Right wrist") */
+    neuro?: string[];
 };
+
+export interface VisitOrder {
+    id: string;
+    name: string;
+    orderedAt: string;
+    /** what it showed — null while the result is still awaited */
+    resultText: string | null;
+    resultAt: string | null;
+    /** the visit the result was read at — the current one keeps it editable */
+    resultVisitId?: string | null;
+}
+
+export interface VisitAssessment {
+    /** prescription_assessments.id — what a state event points at */
+    id?: string;
+    /** its latest recorded state (healing, united, resolved…), if any */
+    state?: StateEvent | null;
+    /** the printed line, dash-normalised */
+    text: string;
+    /** "Fracture - Right knee" — label and site only, for a headline */
+    short: string;
+    family: string | null;
+    site: SiteRef | null;
+}
+
+export interface VisitProcedure {
+    id: string;
+    /** the printed line, dash-normalised ("Cast - Right knee, below-knee, backslab, POP") */
+    text: string;
+    label: string;
+    family: string | null;
+    status: "performed" | "planned";
+    /** planned only — the date it is due, yyyy-mm-dd */
+    dueDate: string | null;
+    site: SiteRef | null;
+    /** a removal / change points at what it took off */
+    removesId: string | null;
+    /** a performed item points at the planned one it carried out */
+    fulfilsId: string | null;
+    createdAt: string;
+    /** the engine intent it came from, if any */
+    intentId?: number | null;
+    /** its configured details (cast type, material…) */
+    details?: Record<string, string | boolean>;
+    /** planned only — deferred (with its new date) or cancelled, if either */
+    planState?: StateEvent | null;
+}
+
+function siteOf(region: string | null, side: string | null, aspect: string | null): SiteRef | null {
+    if (!region) return null;
+    const s = side === "left" || side === "right" || side === "both" ? side : null;
+    return normalizeSite({ region: region as BodyRegion, side: s, aspect: aspect === "back" ? "back" : "front" });
+}
+
+/**
+ * Per visit: what the patient reported and what was found, from the v2
+ * observations, with each local finding's place written onto it
+ * ("Joint swelling / effusion - Right knee"). Reported = symptoms and
+ * history; found = findings.
+ */
+async function sitedObservationsByVisit(
+    visitIds: string[],
+): Promise<Map<string, { reported: string[]; found: string[] }>> {
+    const out = new Map<string, { reported: string[]; found: string[] }>();
+    if (!visitIds.length) return out;
+    const [{ data: rows }, { data: siteRows }] = await Promise.all([
+        supabase.from("visit_observations").select("visit_id, observable_id").in("visit_id", visitIds),
+        supabase.from("visit_observation_sites").select("visit_id, observable_id, region, side, aspect").in("visit_id", visitIds),
+    ]);
+    if (!rows?.length) return out;
+    const ids = [...new Set(rows.map((r: any) => Number(r.observable_id)))];
+    const { data: obs } = await supabase.from("observables").select("id, label, kind").in("id", ids);
+    const byId = new Map<number, { label: string; kind: string }>();
+    for (const o of obs ?? []) byId.set(o.id, { label: o.label, kind: o.kind });
+
+    const sites = new Map<string, string[]>();
+    for (const r of (siteRows ?? []) as any[]) {
+        const site = siteOf(r.region, r.side, r.aspect);
+        if (!site) continue;
+        const k = `${r.visit_id}|${r.observable_id}`;
+        const list = sites.get(k) ?? [];
+        const label = clinicalSiteLabel(site);
+        if (!list.includes(label)) list.push(label);
+        sites.set(k, list);
+    }
+
+    for (const r of rows as any[]) {
+        const o = byId.get(Number(r.observable_id));
+        if (!o) continue;
+        const at = sites.get(`${r.visit_id}|${r.observable_id}`);
+        const text = at?.length ? `${o.label} - ${at.join(", ")}` : o.label;
+        const entry = out.get(r.visit_id) ?? { reported: [], found: [] };
+        (o.kind === "finding" ? entry.found : entry.reported).push(text);
+        out.set(r.visit_id, entry);
+    }
+    return out;
+}
 
 /**
  * Cached wrapper around `fetchPatientVisitsFromNetwork` — see that function
@@ -898,6 +1017,13 @@ export async function fetchPatientVisitStubs(
         story_mechanism: null,
         advice_notes: null,
         isStub: true,
+        assessments: [],
+        procedures: [],
+        sitedFindings: [],
+        exercises: [],
+        orders: [],
+        sitePain: [],
+        neuro: [],
     }));
 }
 
@@ -921,25 +1047,27 @@ export async function hydratePatientVisits(
     const [
         docsRes,
         vsRes,
-        obsNamesByVisit,
+        obsByVisit,
         vfRes,
         rxRes,
         doRes,
         bsRes,
         impRes,
         storyRes,
+        painRes,
     ] = await Promise.all([
         doctorIds.length
             ? safe(supabase.from("doctors").select("id, name").in("id", doctorIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         safe(supabase.from("visit_symptoms").select("visit_id, symptom_id").in("visit_id", visitIds), { data: [] } as any),
-        safe(observationNamesByVisit(visitIds), new Map<string, string[]>()),
+        safe(sitedObservationsByVisit(visitIds), new Map<string, { reported: string[]; found: string[] }>()),
         safe(supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("prescriptions").select("id, visit_id, findings_text, advice_notes").in("visit_id", visitIds), { data: [] } as any),
-        safe(supabase.from("diagnostic_orders").select("visit_id, test_name").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("diagnostic_orders").select("id, visit_id, test_name, created_at, result_text, result_at, result_visit_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_body_sites").select("visit_id, region, aspect, side").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_impairments").select("visit_id, label").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_story").select("visit_id, duration_text, mechanism").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("visit_measurements").select("visit_id, measure_key, side, value_num, value_text, context").in("visit_id", visitIds).or("measure_key.like.PAIN_%,measure_key.like.NV_%"), { data: [] } as any),
     ]);
 
     const doctorMap = new Map<string, string>();
@@ -957,11 +1085,24 @@ export async function hydratePatientVisits(
     const rxIds = (rxRows ?? []).map((r: any) => r.id);
 
     const testsByVisit = new Map<string, string[]>();
+    const ordersByVisit = new Map<string, VisitOrder[]>();
     (doRes.data ?? []).forEach((r: any) => {
         if (!r.test_name) return;
         const list = testsByVisit.get(r.visit_id) ?? [];
         if (!list.includes(r.test_name)) list.push(r.test_name);
         testsByVisit.set(r.visit_id, list);
+        const orders = ordersByVisit.get(r.visit_id) ?? [];
+        if (r.id && !orders.some((o) => o.name === r.test_name)) {
+            orders.push({
+                id: String(r.id),
+                name: dashText(r.test_name),
+                orderedAt: r.created_at,
+                resultText: r.result_text ?? null,
+                resultAt: r.result_at ?? null,
+                resultVisitId: r.result_visit_id ?? null,
+            });
+        }
+        ordersByVisit.set(r.visit_id, orders);
     });
 
     const bodySitesByVisit = new Map<string, string[]>();
@@ -979,13 +1120,51 @@ export async function hydratePatientVisits(
         impairmentsByVisit.set(r.visit_id, list);
     }
 
+    // Pain at a joint, the baseline reading ("Right wrist", 7).
+    const painByVisit = new Map<string, { site: string; value: number }[]>();
+    // Neurovascular checks per site: visit -> site -> check -> value.
+    const nvByVisit = new Map<string, Map<string, Map<string, string>>>();
+    for (const r of (painRes.data ?? []) as any[]) {
+        const key = String(r.measure_key).split("|")[0];
+        if (!key.startsWith("NV_") || !r.value_text) continue;
+        const m = key.match(/^NV_(PULSE|CRT|MOTOR|SENSATION)_(.+)$/);
+        if (!m) continue;
+        const site = siteFromRegionKey(m[2].toLowerCase(), r.side === "left" || r.side === "right" ? r.side : null);
+        const label = site ? clinicalSiteLabel(site) : m[2].toLowerCase();
+        const bySite = nvByVisit.get(r.visit_id) ?? new Map<string, Map<string, string>>();
+        const checks = bySite.get(label) ?? new Map<string, string>();
+        checks.set(m[1], String(r.value_text));
+        bySite.set(label, checks);
+        nvByVisit.set(r.visit_id, bySite);
+    }
+    const NV_NORMAL: Record<string, string> = { PULSE: "Present", CRT: "Normal", MOTOR: "Intact", SENSATION: "Intact" };
+    const NV_NAME: Record<string, string> = { PULSE: "distal pulse", CRT: "capillary refill", MOTOR: "motor", SENSATION: "sensation" };
+    const neuroText = (bySite: Map<string, Map<string, string>> | undefined): string[] =>
+        [...(bySite ?? new Map<string, Map<string, string>>()).entries()].map(([site, checks]) => {
+            const off = [...checks.entries()].filter(([k, v]) => v !== NV_NORMAL[k]);
+            return off.length
+                ? `${off.map(([k, v]) => `${NV_NAME[k]} ${v.toLowerCase()}`).join(", ").replace(/^./, (c) => c.toUpperCase())} - ${site}`
+                : `Neurovascular intact - ${site}`;
+        });
+
+    for (const r of (painRes.data ?? []) as any[]) {
+        if (!String(r.measure_key).startsWith("PAIN_")) continue;
+        if (r.value_num == null || (r.context && r.context !== "baseline")) continue;
+        const region = String(r.measure_key).split("|")[0].replace(/^PAIN_/, "").toLowerCase();
+        const site = siteFromRegionKey(region, r.side === "left" || r.side === "right" ? r.side : null);
+        const label = site ? clinicalSiteLabel(site) : region.replace(/_/g, " ");
+        const list = painByVisit.get(r.visit_id) ?? [];
+        if (!list.some((p) => p.site === label)) list.push({ site: label, value: Number(r.value_num) });
+        painByVisit.set(r.visit_id, list);
+    }
+
     const storyByVisit = new Map<string, { duration: string | null; mechanism: string | null }>();
     for (const r of (storyRes.data ?? []) as { visit_id: string; duration_text: string | null; mechanism: string | null }[]) {
         storyByVisit.set(r.visit_id, { duration: r.duration_text, mechanism: r.mechanism });
     }
 
     // Wave 2: Name resolution & prescription item details
-    const [sympsRes, findsRes, pmRes, peRes] = await Promise.all([
+    const [sympsRes, findsRes, pmRes, peRes, paRes, piRes] = await Promise.all([
         allSymptomIds.length
             ? safe(supabase.from("symptoms").select("id, name").in("id", allSymptomIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
@@ -996,7 +1175,13 @@ export async function hydratePatientVisits(
             ? safe(supabase.from("prescription_medicines").select("prescription_id, medicine_id, dosage_mg, frequency, duration_days, route").in("prescription_id", rxIds), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
         rxIds.length
-            ? safe(supabase.from("prescription_exercises").select("prescription_id, label, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            ? safe(supabase.from("prescription_exercises").select("prescription_id, label, sort_order, sets, reps, hold_seconds, per_day, side, notes, load_kg, days_per_week, weeks").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        rxIds.length
+            ? safe(supabase.from("prescription_assessments").select("id, prescription_id, label, family, region, side, aspect, site_label, text, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
+            : Promise.resolve({ data: [] } as any),
+        rxIds.length
+            ? safe(supabase.from("prescription_interventions").select("id, prescription_id, intent_id, details, label, family, region, side, aspect, text, status, due_date, removes_id, fulfils_id, created_at, sort_order").in("prescription_id", rxIds).order("sort_order", { ascending: true }), { data: [] } as any)
             : Promise.resolve({ data: [] } as any),
     ]);
 
@@ -1031,23 +1216,92 @@ export async function hydratePatientVisits(
         medsByRx.set(pm.prescription_id, list);
     }
 
+    const visitByRx = new Map<string, string>();
+    for (const [visitId, rxData] of rxByVisit) visitByRx.set(rxData.id, visitId);
+
     const exByVisitId = new Map<string, string[]>();
+    const exLinesByVisit = new Map<string, string[]>();
     for (const pe of (peRes.data ?? [])) {
-        const visitId = [...rxByVisit.entries()].find(([, rxData]) => rxData.id === pe.prescription_id)?.[0];
+        const visitId = visitByRx.get(pe.prescription_id);
         if (!visitId) continue;
         const list = exByVisitId.get(visitId) ?? [];
         list.push(pe.label);
         exByVisitId.set(visitId, list);
+        const lines = exLinesByVisit.get(visitId) ?? [];
+        lines.push(dashText(formatLine({
+            id: "", intentId: null, label: pe.label, sortOrder: pe.sort_order ?? 0,
+            side: pe.side ?? null, notes: pe.notes ?? "",
+            sets: pe.sets ?? null, reps: pe.reps ?? null, holdSeconds: pe.hold_seconds ?? null, perDay: pe.per_day ?? null,
+            loadKg: pe.load_kg ?? null, daysPerWeek: pe.days_per_week ?? null, weeks: pe.weeks ?? null,
+        })));
+        exLinesByVisit.set(visitId, lines);
     }
+
+    const assessByVisit = new Map<string, VisitAssessment[]>();
+    for (const r of (paRes.data ?? []) as any[]) {
+        const visitId = visitByRx.get(r.prescription_id);
+        if (!visitId) continue;
+        const site = siteOf(r.region, r.side, r.aspect);
+        const siteName = site ? clinicalSiteLabel(site) : r.site_label;
+        const list = assessByVisit.get(visitId) ?? [];
+        list.push({
+            id: r.id,
+            text: dashText(r.text ?? (siteName ? `${r.label} - ${siteName}` : r.label)),
+            short: siteName ? `${r.label} - ${siteName}` : r.label,
+            family: r.family ?? null,
+            site,
+        });
+        assessByVisit.set(visitId, list);
+    }
+
+    const procByVisit = new Map<string, VisitProcedure[]>();
+    for (const r of (piRes.data ?? []) as any[]) {
+        const visitId = visitByRx.get(r.prescription_id);
+        if (!visitId) continue;
+        const list = procByVisit.get(visitId) ?? [];
+        list.push({
+            id: r.id,
+            intentId: r.intent_id ?? null,
+            details: r.details ?? {},
+            text: dashText(r.text ?? r.label),
+            label: r.label,
+            family: r.family ?? null,
+            status: r.status === "planned" ? "planned" : "performed",
+            dueDate: r.due_date ?? null,
+            site: siteOf(r.region, r.side, r.aspect),
+            removesId: r.removes_id ?? null,
+            fulfilsId: r.fulfils_id ?? null,
+            createdAt: r.created_at,
+        });
+        procByVisit.set(visitId, list);
+    }
+
+    // Wave 4: what each assessment and plan is doing now (clinical_state_events).
+    const states = await safe(
+        latestStates(
+            [...assessByVisit.values()].flat().map((a) => a.id!).filter(Boolean),
+            [...procByVisit.values()].flat().filter((p) => p.status === "planned").map((p) => p.id),
+        ),
+        { byAssessment: new Map(), byIntervention: new Map() },
+    );
+    for (const list of assessByVisit.values()) for (const a of list) a.state = a.id ? states.byAssessment.get(a.id) ?? null : null;
+    for (const list of procByVisit.values()) for (const p of list) p.planState = states.byIntervention.get(p.id) ?? null;
 
     return liveVisits.map((v) => {
         const rx = rxByVisit.get(v.id);
         const rxId = rx?.id;
         const story = storyByVisit.get(v.id);
         const rawFindingsText = rx?.findings_text ?? null;
-        const diagnoses = rawFindingsText
-            ? rawFindingsText.split(",").map((s: string) => s.trim()).filter(Boolean)
-            : [];
+        const assessments = assessByVisit.get(v.id) ?? [];
+        const obsV = obsByVisit.get(v.id);
+        // With structured assessments, THEY are the diagnoses: splitting the
+        // joined findings text on commas cut "Fracture - Right knee,
+        // displaced" in two and mixed the examination findings in.
+        const diagnoses = assessments.length
+            ? assessments.map((a) => a.short)
+            : rawFindingsText
+                ? rawFindingsText.split(",").map((s: string) => dashText(s.trim())).filter(Boolean)
+                : [];
         const tests = testsByVisit.get(v.id) ?? [];
 
         return {
@@ -1055,8 +1309,8 @@ export async function hydratePatientVisits(
             created_at: v.created_at,
             status: v.status,
             doctor_name: v.assigned_doctor_id ? (doctorMap.get(v.assigned_doctor_id) ?? null) : null,
-            symptoms: obsNamesByVisit.get(v.id)?.length
-                ? obsNamesByVisit.get(v.id)!
+            symptoms: obsV?.reported.length
+                ? obsV.reported
                 : ((vsRows ?? [])
                     .filter((r: any) => r.visit_id === v.id)
                     .map((r: any) => symptomById.get(Number(r.symptom_id)))
@@ -1077,6 +1331,13 @@ export async function hydratePatientVisits(
             story_mechanism: story?.mechanism ?? null,
             advice_notes: rx?.advice_notes ?? null,
             isStub: false,
+            assessments,
+            procedures: procByVisit.get(v.id) ?? [],
+            sitedFindings: obsV?.found ?? [],
+            exercises: exLinesByVisit.get(v.id) ?? [],
+            orders: ordersByVisit.get(v.id) ?? [],
+            sitePain: painByVisit.get(v.id) ?? [],
+            neuro: neuroText(nvByVisit.get(v.id)),
         };
     });
 }
@@ -1137,6 +1398,14 @@ export type PatientRecordRow = {
      * Reassessment Due count) rather than parse a display string back apart.
      */
     care_plan_progress: { sessionsCompleted: number; targetSessions: number } | null;
+    // ── Cardiology — Project Pulse Point (added 2026-09-21) ───────────────
+    // Straight off this visit's own `vitals` blob, same "real field, no
+    // fabrication" rule the rest of this type follows — null means the
+    // doctor didn't record one this visit, not "no data available".
+    /** ejection fraction, % (echo), this visit. */
+    ef_percent: string | null;
+    /** NYHA class 1-4 (I-IV), this visit. */
+    nyha_class: string | null;
 };
 
 type RawVisitRow = {
@@ -1146,6 +1415,11 @@ type RawVisitRow = {
     started_at: string | null;
     completed_at: string | null;
     care_plan_id: string | null;
+    /** raw `visits.vitals` jsonb — only read for `ef_percent`/`nyha_class`
+     *  today, by `cardiologySnapshot` in patientSnapshot.ts. See its own
+     *  fetchTodayPatients/fetchRecentPatients call sites for why this is
+     *  cheap to add: `vitals` rides the same row already being selected. */
+    vitals?: Record<string, unknown> | null;
 };
 
 /**
@@ -1407,6 +1681,8 @@ async function buildPatientRecordRows(
                 ? `Session ${progress.sessionsCompleted} of ${progress.targetSessions}`
                 : null,
             care_plan_progress: progress,
+            ef_percent: typeof v.vitals?.efPercent === "string" ? v.vitals.efPercent : null,
+            nyha_class: typeof v.vitals?.nyhaClass === "string" ? v.vitals.nyhaClass : null,
         });
     }
 
@@ -1429,7 +1705,7 @@ export async function fetchTodayPatients(doctorId: string): Promise<PatientRecor
 
             const { data: visits, error } = await supabase
                 .from("visits")
-                .select("id, patient_id, status, started_at, completed_at, care_plan_id")
+                .select("id, patient_id, status, started_at, completed_at, care_plan_id, vitals")
                 .eq("assigned_doctor_id", doctorId)
                 .gte("started_at", todayStart.toISOString())
                 .order("started_at", { ascending: false });
@@ -1456,7 +1732,7 @@ export async function fetchRecentPatients(doctorId: string, limit = 40): Promise
         fetcher: async () => {
             const { data: visits, error } = await supabase
                 .from("visits")
-                .select("id, patient_id, status, started_at, completed_at, care_plan_id")
+                .select("id, patient_id, status, started_at, completed_at, care_plan_id, vitals")
                 .eq("assigned_doctor_id", doctorId)
                 .eq("status", "completed")
                 .order("started_at", { ascending: false })

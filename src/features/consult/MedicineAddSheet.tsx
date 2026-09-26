@@ -24,12 +24,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Pill, X } from "lucide-react";
+import { Check, IndianRupee, Pill, X } from "lucide-react";
 import type { Medicine } from "../../lib/synapse/brands";
 import { brandVariantLabel, doseFieldValue } from "../../lib/synapse/brands";
 import { defaultTimingFor } from "./dosing";
 import { firedChord, matches } from "../../lib/keyboard/keymap";
 import { useOverlayFocus } from "../../hooks/useOverlayFocus";
+import type { ClinicMedicinePrice } from "../../lib/db/medicinePricing";
 
 export interface MedicineDraft {
     medicine: Medicine | null;
@@ -39,6 +40,25 @@ export interface MedicineDraft {
     durationDays: string;
     instructions: string;
     isSos: boolean;
+    /** present only when the clinic has medicine billing on — see `MedicineBillingContext` */
+    quantityDispensed?: string;
+}
+
+/**
+ * The medicine-billing half of this sheet — entirely absent (prop left
+ * undefined) for the vast majority of clinics that never turn this on, in
+ * which case nothing below renders and the sheet is pixel-identical to
+ * before this feature existed. See lib/db/medicinePricing.ts and the
+ * `20260919_medicine_dispensing_billing.sql` migration.
+ */
+export interface MedicineBillingContext {
+    enabled: boolean;
+    /** keyed by `medicines.id` — every candidate brand in this sheet's own
+     *  list, fetched once when the sheet opened. */
+    prices: Map<number, ClinicMedicinePrice>;
+    /** true while the batch price fetch for this sheet's brand list is in flight */
+    loadingPrices: boolean;
+    onSetPrice: (medicineId: number, packPrice: number, packUnits: number) => Promise<void>;
 }
 
 interface Props {
@@ -51,6 +71,9 @@ interface Props {
     initialBrand: Medicine | null;
     onCancel: () => void;
     onConfirm: (draft: MedicineDraft) => void;
+    /** Absent (or `enabled: false`) means the whole quantity/price row
+     *  simply does not render — see `MedicineBillingContext`'s own comment. */
+    billing?: MedicineBillingContext;
 }
 
 /** The four slots a frequency string encodes: morning-afternoon-evening-night. */
@@ -64,7 +87,7 @@ const SLOTS = [
 const TIMINGS = ["After food", "Before food", "With food", "Empty stomach"];
 
 export function MedicineAddSheet({
-    open, compositionLabel, brands, initialBrand, onCancel, onConfirm,
+    open, compositionLabel, brands, initialBrand, onCancel, onConfirm, billing,
 }: Props) {
     const [brand, setBrand] = useState<Medicine | null>(initialBrand);
     const [slots, setSlots] = useState<boolean[]>([true, false, true, false]);
@@ -72,6 +95,14 @@ export function MedicineAddSheet({
     const [dosage, setDosage] = useState("");
     const [timing, setTiming] = useState(TIMINGS[0]);
     const [sos, setSos] = useState(false);
+
+    // ── Medicine billing (opt-in) — see MedicineBillingContext ────────────
+    const [quantity, setQuantity] = useState("");
+    const [priceOpen, setPriceOpen] = useState(false);
+    const [packPrice, setPackPrice] = useState("");
+    const [packUnits, setPackUnits] = useState("");
+    const [priceSaving, setPriceSaving] = useState(false);
+    const [priceError, setPriceError] = useState<string | null>(null);
 
     // Re-seed whenever a different medicine opens the sheet.
     useEffect(() => {
@@ -94,7 +125,82 @@ export function MedicineAddSheet({
             : compositionLabel;
         setTiming(defaultTimingFor(molecules) ?? TIMINGS[0]);
         setSos(false);
+        setQuantity("");
+        setPriceOpen(false);
+        setPackPrice("");
+        setPackUnits("");
+        setPriceError(null);
     }, [open, initialBrand, compositionLabel]);
+
+    // Quantity defaults to "how many units this schedule actually uses" —
+    // slots per day × days — the same arithmetic a doctor already does by
+    // hand when counting out a strip. Recomputed EVERY time the schedule
+    // changes — duration/timing always drives quantity, never the other way
+    // round (Anmol, 2026-09-19: "adjusting the day should adjust the
+    // quantity, but adjusting the quantity should not adjust the day").
+    // A manual edit is a one-off override for the CURRENT duration — two
+    // extra tablets for this five-day course — and this effect does not
+    // re-run just because `quantity` itself changed (it is not a dependency
+    // below), so the override sticks right up until the doctor changes the
+    // duration or the timing slots again, at which point the schedule has
+    // genuinely changed and the override is recomputed fresh rather than
+    // carried forward as a now-meaningless offset. SOS carries no schedule
+    // to derive from, so it is left blank rather than guessed.
+    useEffect(() => {
+        if (!billing?.enabled || sos) return;
+        const perDay = slots.filter(Boolean).length;
+        const days = Number.parseInt(duration, 10);
+        if (perDay > 0 && Number.isFinite(days) && days > 0) {
+            setQuantity(String(perDay * days));
+        }
+    }, [billing?.enabled, slots, duration, sos]);
+
+    /**
+     * ↑ ↓ steps a numeric field by `step`, held to `min`. Local to whichever
+     * input is focused (not the panel's own capture-phase listener above —
+     * that one already backs off inside any field, per its own doc comment,
+     * so this never fights it) — a quick nudge without reaching for the
+     * mouse, the same convenience a native `<input type="number">` spinner
+     * gives, on fields that stay `inputMode` text for their own formatting
+     * reasons. Any other key falls through untouched.
+     */
+    const stepOnArrow = (value: string, setValue: (v: string) => void, step: number, min: number) =>
+        (e: React.KeyboardEvent<HTMLInputElement>) => {
+            if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+            e.preventDefault();
+            const current = Number(value);
+            const base = Number.isFinite(current) ? current : min;
+            const next = e.key === "ArrowUp" ? base + step : base - step;
+            setValue(String(Math.max(min, next)));
+        };
+
+    const currentPrice = brand ? billing?.prices.get(brand.id) ?? null : null;
+    const lineTotal =
+        currentPrice && quantity.trim() && Number.isFinite(Number(quantity))
+            ? Math.round(Number(quantity) * currentPrice.unitPrice * 100) / 100
+            : null;
+
+    const submitPrice = async () => {
+        if (!billing || !brand) return;
+        const price = Number(packPrice);
+        const units = Number(packUnits);
+        if (!Number.isFinite(price) || price < 0 || !Number.isFinite(units) || units <= 0) {
+            setPriceError("Enter a valid pack price and unit count.");
+            return;
+        }
+        setPriceSaving(true);
+        setPriceError(null);
+        try {
+            await billing.onSetPrice(brand.id, price, units);
+            setPriceOpen(false);
+            setPackPrice("");
+            setPackUnits("");
+        } catch (e) {
+            setPriceError(e instanceof Error ? e.message : "Could not save that price.");
+        } finally {
+            setPriceSaving(false);
+        }
+    };
 
     /**
      * Strength variants of the SELECTED brand family, so "Acenac-P 100mg" and
@@ -152,6 +258,7 @@ export function MedicineAddSheet({
             durationDays: duration.trim(),
             instructions: timing,
             isSos: sos,
+            ...(billing?.enabled ? { quantityDispensed: quantity.trim() } : {}),
         });
 
     /**
@@ -430,6 +537,94 @@ export function MedicineAddSheet({
                             />
                         </section>
                     </div>
+
+                    {/* Medicine dispensing billing — entirely absent unless
+                        the clinic has turned it on (see MedicineBillingContext).
+                        A clinic that never enables this sees this sheet exactly
+                        as it always was; nothing here grows or shifts anything
+                        above or below it. */}
+                    {billing?.enabled && brand && (
+                        <div className="cs-addmed-grid">
+                            <section className="cs-addmed-sec">
+                                <span className="cs-addmed-label">Qty dispensed</span>
+                                <input
+                                    className="cs-addmed-input"
+                                    value={quantity}
+                                    placeholder="e.g. 10"
+                                    inputMode="numeric"
+                                    onChange={(e) => setQuantity(e.target.value)}
+                                    onKeyDown={stepOnArrow(quantity, setQuantity, 1, 0)}
+                                    aria-label="Quantity dispensed — arrow up or down to adjust by one"
+                                />
+                            </section>
+
+                            <section className="cs-addmed-sec">
+                                <span className="cs-addmed-label">Price</span>
+                                {billing.loadingPrices ? (
+                                    <span className="cs-addmed-price-hint">Loading…</span>
+                                ) : currentPrice ? (
+                                    <button
+                                        type="button"
+                                        className="cs-addmed-price-set"
+                                        onClick={() => {
+                                            setPriceOpen((v) => !v);
+                                            setPackPrice(String(currentPrice.packPrice));
+                                            setPackUnits(String(currentPrice.packUnits));
+                                        }}
+                                    >
+                                        {lineTotal !== null
+                                            ? `₹${lineTotal} · ₹${currentPrice.unitPrice.toFixed(2)}/unit`
+                                            : `₹${currentPrice.unitPrice.toFixed(2)}/unit`}
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        className="cs-addmed-price-set is-unset"
+                                        onClick={() => setPriceOpen((v) => !v)}
+                                    >
+                                        <IndianRupee size={11} /> Set price
+                                    </button>
+                                )}
+                            </section>
+
+                            {priceOpen && (
+                                <div className="cs-addmed-price-form">
+                                    <div className="cs-addmed-price-row">
+                                        <input
+                                            className="cs-addmed-input"
+                                            value={packPrice}
+                                            placeholder="Pack price (₹)"
+                                            inputMode="decimal"
+                                            onChange={(e) => setPackPrice(e.target.value)}
+                                            onKeyDown={stepOnArrow(packPrice, setPackPrice, 10, 0)}
+                                            aria-label="Pack price in rupees — arrow up or down to adjust by ten"
+                                        />
+                                        <input
+                                            className="cs-addmed-input"
+                                            value={packUnits}
+                                            placeholder="Units per pack"
+                                            inputMode="numeric"
+                                            onChange={(e) => setPackUnits(e.target.value)}
+                                            onKeyDown={stepOnArrow(packUnits, setPackUnits, 1, 1)}
+                                            aria-label="Units per pack — arrow up or down to adjust by one"
+                                        />
+                                    </div>
+                                    {priceError && <p className="cs-newmed-error">{priceError}</p>}
+                                    <div className="cs-addmed-price-actions">
+                                        <button type="button" onClick={() => setPriceOpen(false)}>Cancel</button>
+                                        <button
+                                            type="button"
+                                            className="cs-addmed-price-save"
+                                            disabled={priceSaving}
+                                            onClick={submitPrice}
+                                        >
+                                            {priceSaving ? "Saving…" : "Save price"}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <section className="cs-addmed-sec">
                         {/* The digit is printed ON the label rather than only in

@@ -254,6 +254,33 @@ export function readCachedIdentity(userId: string): Identity | null {
     }
 }
 
+/**
+ * Same cache, read WITHOUT already knowing the signed-in user's id — for the
+ * one gate check that runs before `supabase.auth.getSession()` has even
+ * returned. `getSession()` reads Supabase's own session from local storage,
+ * but when the stored access token is stale it internally attempts a
+ * network refresh first — offline, that attempt can reject or hang past
+ * `GATE_TIMEOUT_MS`, and AuthProvider's initial check used to treat that
+ * exactly like "not logged in" and eject straight to the login screen, with
+ * no chance to reach `resolve()`'s own cached-identity fallback (Anmol,
+ * 2026-09-20: "this app generally doesn't open when you are offline...
+ * whenever you're offline can't reach your server"). This is the SAME
+ * cache written by every successful `resolve()`, so it is exactly as
+ * trustworthy — a device that never had a real, successful sign-in here has
+ * nothing to read, and any DEFINITIVE rejection already clears it via
+ * `clearCachedIdentity()`.
+ */
+export function readAnyCachedIdentity(): Identity | null {
+    try {
+        const raw = localStorage.getItem(IDENTITY_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { userId?: string; identity?: Identity };
+        return parsed?.identity ?? null;
+    } catch {
+        return null;
+    }
+}
+
 export function clearCachedIdentity(): void {
     try {
         localStorage.removeItem(IDENTITY_CACHE_KEY);

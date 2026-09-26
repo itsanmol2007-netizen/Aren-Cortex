@@ -67,6 +67,29 @@ export interface PrescriptionDocumentProps {
     therapyNotes?: string;
     /** the home programme, one formatted line each */
     exerciseLines?: string[];
+    /**
+     * What the doctor judged it to be, one line each, with the place and
+     * the details the Assessment card composed: "Fracture - Left wrist,
+     * distal radius, displaced, dorsal angulation". Kept apart from
+     * findings: what was found is not what it was judged to be.
+     */
+    diagnoses?: string[];
+    /** investigations whose results were read at this visit */
+    results?: { name: string; text: string }[];
+    /**
+     * Today's procedures, split by whether they were done or are planned.
+     * When given, this replaces `therapyNotes`' single mixed list (which
+     * filed "Cast removal, due 3 Oct" under therapy performed).
+     */
+    procedures?: { text: string; status: "performed" | "planned"; due?: string | null }[];
+    /** what continues from earlier visits: "POP cast - Right wrist: keep on (in place 1 week)" */
+    continuingCare?: string[];
+    /**
+     * Normal examination, documented: "Neurovascular intact - Left wrist".
+     * Printed in the findings card in plain ink: a check that came back
+     * normal is a record, not the red warning an abnormal finding is.
+     */
+    examNotes?: string[];
     doctor?: DoctorShape | null;
     hospital?: DBHospital | null;
     vitals?: Vitals;
@@ -96,6 +119,38 @@ export interface PrescriptionDocumentProps {
      * the editor, both print what they always printed.
      */
     config?: PrescriptionConfig;
+    /**
+     * What the visit actually billed to — the exact same figures
+     * ReviewModal's own screen-only Billing rail computes (fee, medicine,
+     * additional charges, discount, final total), handed down so the
+     * PRINTED/thermal document carries them too. `undefined`/`null` renders
+     * nothing, same as every other optional section here — a clinic using
+     * none of consultation fees, medicine billing or additional charges
+     * prints exactly the document it always did.
+     *
+     * Deliberately a plain, already-resolved snapshot rather than the raw
+     * ingredients ReviewModal computes it from: this component has no
+     * business re-deriving GST math or reading `clinic_medicine_prices`
+     * itself, and a print target (offline reprint, Print RX) may not have
+     * those sources in scope at all.
+     */
+    billing?: PrescriptionBillingSummary | null;
+}
+
+export interface PrescriptionBillingSummary {
+    /** Net of front-desk's own intake-time discount — the same number
+     *  ReviewModal's rail labels "Consultation fee". Null when no fee row
+     *  exists for this visit at all (never shown as a zero). */
+    consultationFee: number | null;
+    feeGstAmount: number;
+    medicineTotal: number;
+    medicineGstAmount: number;
+    additionalCharges: { label: string; amount: number }[];
+    /** Percent of the final total — null when a flat rupee amount was typed
+     *  instead (`discountAmount` is always the resolved number either way). */
+    discountPercent: number | null;
+    discountAmount: number;
+    total: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,6 +194,11 @@ function StandardDocument({
     adviceNotes,
     therapyNotes,
     exerciseLines = [],
+    diagnoses = [],
+    results = [],
+    procedures,
+    continuingCare = [],
+    examNotes = [],
     doctor,
     hospital,
     vitals,
@@ -146,6 +206,7 @@ function StandardDocument({
     date,
     language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
+    billing,
 }: PrescriptionDocumentProps) {
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     // A URL existing is not the same as it LOADING — the "no image
@@ -256,10 +317,23 @@ function StandardDocument({
     const followUpBorder = monochrome ? "#999999" : "#fcd34d";
     const dotColor = monochrome ? "#171717" : "#1268e8";
 
+    // `width` is 100% rather than a fixed "210mm"/"148mm" on purpose
+    // (Anmol, 2026-09-20: dead space "on the right side... and the bottom,
+    // that's just a scaling problem... stuck in the corner"). `@page` in
+    // ReviewModal.tsx already declares the true physical page size
+    // (`size: A4 portrait; margin: 0`), but a print driver's actual
+    // printable area frequently doesn't land on that exact number — when it
+    // doesn't, a FIXED-mm content width renders at its own true size and
+    // simply sits in whatever corner the page box starts from, instead of
+    // filling it. `width: 100%` always resolves against whatever page box
+    // the print pipeline actually produces, so it fills the real page
+    // regardless of any driver-level mismatch. `minHeight` stays a fixed mm
+    // value — the bottom dead space on a short prescription is real paper
+    // left over, not a bug (confirmed, not fixing).
     const pageStyle: React.CSSProperties =
         format === "a4"
-            ? { width: "210mm", minHeight: "297mm", padding: "16mm 18mm" }
-            : { width: "148mm", minHeight: "210mm", padding: "10mm 12mm" };
+            ? { width: "100%", minHeight: "297mm", padding: "16mm 18mm", boxSizing: "border-box" }
+            : { width: "100%", minHeight: "210mm", padding: "10mm 12mm", boxSizing: "border-box" };
 
     // Devanagari reads visibly smaller/lighter than Latin at the same pixel
     // size — lower x-height ratio, thinner default stroke contrast in most
@@ -285,7 +359,7 @@ function StandardDocument({
                     findings.length ? `Findings: ${findings.join(", ")}` : "",
                     "---",
                     "Rx:",
-                    ...prescription.map((m, i) => `${i + 1}. ${m.name} — ${resolveLabel(m.frequency)} — ${m.duration}`),
+                    ...prescription.map((m, i) => `${i + 1}. ${m.name} - ${resolveLabel(m.frequency)} - ${m.duration}`),
                     tests.length ? `Investigations: ${tests.join(", ")}` : "",
                     followUpDays ? `Follow up: ${followUpDays} days` : "",
                 ].filter(Boolean).join("\n");
@@ -449,26 +523,44 @@ function StandardDocument({
                 {prescriptionRef && <PatientCell label={t.ref} value={prescriptionRef} mono />}
             </div>
 
-            {/* ── Vitals ── */}
+            {/* ── Vitals ── same bordered-card treatment Complaints/Findings
+                already carry below — was a bare, unbordered inline strip of
+                8-11px text sitting directly under the patient strip, which
+                against those two proper boxed cards read as "unnecessary
+                hierarchy to useless things and the actual measurements just
+                getting shit" (Anmol, 2026-09-20). The measurements a doctor
+                actually recorded earn the same visual weight as a complaint
+                list, not less. */}
             {vitals && Object.values(vitals).some(Boolean) && (
-                <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
-                    {/* Read from the catalogue — see the note on the twin
-                        block in ReviewModal for why these two lists stopped
-                        being hand-maintained on 2026-08-16. `rxLabel` rather
-                        than `printLabel` is what keeps this surface's shorter
-                        vocabulary: FBS and RBS are what an Indian prescription
-                        says, and what the test catalogue itself calls them. */}
-                    {MEASURE_FIELDS.map((f) => {
-                        const value = vitals[f.key];
-                        return value ? (
-                            <VitalItem key={f.key} label={localizeMeasureLabel(f.key, f.rxLabel, lang)} value={value} unit={f.unit} labelColor={rx.ink} />
-                        ) : null;
-                    })}
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.measurements}
+                    </div>
+                    <div style={{ display: "flex", gap: "10px 20px", flexWrap: "wrap" }}>
+                        {/* Read from the catalogue — see the note on the twin
+                            block in ReviewModal for why these two lists stopped
+                            being hand-maintained on 2026-08-16. `rxLabel` rather
+                            than `printLabel` is what keeps this surface's shorter
+                            vocabulary: FBS and RBS are what an Indian prescription
+                            says, and what the test catalogue itself calls them. */}
+                        {MEASURE_FIELDS.map((f) => {
+                            const value = vitals[f.key];
+                            return value ? (
+                                <VitalItem key={f.key} label={localizeMeasureLabel(f.key, f.rxLabel, lang)} value={value} unit={f.unit} labelColor={rx.ink} />
+                            ) : null;
+                        })}
+                        {/* Custom-measurement fallback — doctor-typed label,
+                            printed as-is. Never in MEASURE_FIELDS; see
+                            ReviewModal's twin block for why. */}
+                        {(vitals.customMeasurements ?? []).map((c) => (
+                            <VitalItem key={c.id} label={c.label} value={c.value} unit={c.unit} labelColor={rx.ink} />
+                        ))}
+                    </div>
                 </div>
             )}
 
             {/* ── Complaints & Findings ── */}
-            {(symptoms.length > 0 || findings.length > 0) && (
+            {(symptoms.length > 0 || findings.length > 0 || examNotes.length > 0) && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                     {symptoms.length > 0 && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
@@ -480,7 +572,7 @@ function StandardDocument({
                             ))}
                         </div>
                     )}
-                    {findings.length > 0 && (
+                    {(findings.length > 0 || examNotes.length > 0) && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
                             <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                                 {t.findings}
@@ -488,8 +580,55 @@ function StandardDocument({
                             {findings.map((f) => (
                                 <div key={f} style={{ fontSize: bodySize, color: "#c0392b", marginBottom: 2 }}>⚠ {f}</div>
                             ))}
+                            {examNotes.map((f) => (
+                                <div key={f} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>✓ {f}</div>
+                            ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Assessment ── what it was judged to be, with its place and
+                details, set apart from what was found. The accent edge is
+                what makes it read as the conclusion of the two cards above. */}
+            {diagnoses.length > 0 && (
+                <div style={{
+                    border: "1px solid #e5e7eb", borderLeft: `3px solid ${accentColor}`, borderRadius: 6,
+                    padding: "6px 10px", marginBottom: 10, background: rx.veil,
+                }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.assessment}
+                    </div>
+                    {diagnoses.map((d) => (
+                        <div key={d} style={{ fontSize: bodySize, color: "#111", fontWeight: 700, marginBottom: 2 }}>{d}</div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Investigation results read today ── */}
+            {results.length > 0 && (
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.results}
+                    </div>
+                    {results.map((r) => (
+                        <div key={r.name} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>
+                            <span style={{ fontWeight: 700, color: "#111" }}>{r.name}:</span> {r.text}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Continuing care ── what the patient already carries from
+                earlier visits, so the paper says "keep the cast on". */}
+            {continuingCare.length > 0 && (
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.continuingCare}
+                    </div>
+                    {continuingCare.map((c) => (
+                        <div key={c} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>• {c}</div>
+                    ))}
                 </div>
             )}
 
@@ -646,7 +785,33 @@ function StandardDocument({
                 {/* What the clinic did today, above what the patient takes
                     home. A physiotherapy session largely consists of these and
                     printing them under "Instructions" would misfile them. */}
-                {therapyNotes && (
+                {procedures && procedures.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                        {procedures.some((p) => p.status === "performed") && (
+                            <>
+                                <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                                    {t.doneToday}
+                                </div>
+                                {procedures.filter((p) => p.status === "performed").map((p, i) => (
+                                    <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>› {p.text}</div>
+                                ))}
+                            </>
+                        )}
+                        {procedures.some((p) => p.status === "planned") && (
+                            <>
+                                <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", margin: "6px 0 4px" }}>
+                                    {t.plannedNext}
+                                </div>
+                                {procedures.filter((p) => p.status === "planned").map((p, i) => (
+                                    <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>
+                                        › {p.text}{p.due && <b style={{ color: rx.ink }}> · {t.dueOn(p.due)}</b>}
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </div>
+                )}
+                {!procedures && therapyNotes && (
                     <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                             {t.therapyPerformed}
@@ -696,6 +861,51 @@ function StandardDocument({
                     )}
                 </div>
             </div>
+
+            {/* ── Billing ── the printed twin of ReviewModal's screen-only
+                rail — same figures, appended at the bottom rather than
+                beside the document, because a printed page (or a WhatsApp
+                send) can't place two documents side by side the way the
+                on-screen review can (Anmol, 2026-09-20: "I don't see the
+                receipt thing... there is no receipt into the printed
+                documents"). `billing` is undefined for the vast majority of
+                consults (no fee configured, no medicine billing, no
+                additional charges), in which case this renders nothing. */}
+            {billing && (billing.consultationFee != null || billing.medicineTotal > 0 || billing.additionalCharges.length > 0) && (
+                <div style={{ border: `1px solid ${rx.mid}`, borderRadius: 6, padding: "8px 12px", marginTop: 12 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                        {t.billing}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {billing.consultationFee != null && (
+                            <BillingRow label={t.consultationFee} amount={billing.consultationFee} size={bodySize} />
+                        )}
+                        {billing.feeGstAmount > 0 && <BillingRow label="GST" amount={billing.feeGstAmount} size={smallSize} muted />}
+                        {billing.medicineTotal > 0 && (
+                            <BillingRow label={t.medicineCharge} amount={billing.medicineTotal} size={bodySize} />
+                        )}
+                        {billing.medicineGstAmount > 0 && <BillingRow label="GST" amount={billing.medicineGstAmount} size={smallSize} muted />}
+                        {billing.additionalCharges.map((c, i) => (
+                            <BillingRow key={`${c.label}-${i}`} label={c.label} amount={c.amount} size={bodySize} />
+                        ))}
+                        {billing.discountAmount > 0 && (
+                            <BillingRow
+                                label={`${t.discount}${billing.discountPercent != null ? ` (${billing.discountPercent}%)` : ""}`}
+                                amount={-billing.discountAmount} size={bodySize}
+                            />
+                        )}
+                    </div>
+                    <div style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        marginTop: 6, paddingTop: 6, borderTop: `1px solid ${rx.mid}`,
+                    }}>
+                        <span style={{ fontSize: bodySize, fontWeight: 900, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                            {t.total}
+                        </span>
+                        <span style={{ fontSize: headingSize, fontWeight: 900, color: rx.ink }}>₹{billing.total.toFixed(2)}</span>
+                    </div>
+                </div>
+            )}
 
             {/* ── Footer ── */}
             {/* The clinic's own closing line — an emergency number, a timing
@@ -758,11 +968,17 @@ function ThermalDocument({
     adviceNotes,
     therapyNotes,
     exerciseLines = [],
+    diagnoses = [],
+    results = [],
+    procedures,
+    continuingCare = [],
+    examNotes = [],
     doctor,
     hospital,
     date,
     language,
     config = DEFAULT_PRESCRIPTION_CONFIG,
+    billing,
 }: PrescriptionDocumentProps) {
     // Same "URL existing isn't the same as it loading" gap as
     // StandardDocument's own `headerImgError`/`sigImgError` — see that
@@ -844,10 +1060,33 @@ function ThermalDocument({
             )}
 
             {/* Findings */}
-            {findings.length > 0 && (
+            {(findings.length > 0 || examNotes.length > 0) && (
                 <>
                     <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.findings}</div>
                     {findings.map((f) => <div key={f} style={th}>! {f}</div>)}
+                    {examNotes.map((f) => <div key={f} style={th}>- {f}</div>)}
+                    {divider}
+                </>
+            )}
+
+            {diagnoses.length > 0 && (
+                <>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.assessment}</div>
+                    {diagnoses.map((d) => <div key={d} style={{ ...th, fontWeight: 700 }}>{d}</div>)}
+                    {divider}
+                </>
+            )}
+            {results.length > 0 && (
+                <>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.results}</div>
+                    {results.map((r) => <div key={r.name} style={th}><b>{r.name}:</b> {r.text}</div>)}
+                    {divider}
+                </>
+            )}
+            {continuingCare.length > 0 && (
+                <>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.continuingCare}</div>
+                    {continuingCare.map((c) => <div key={c} style={th}>- {c}</div>)}
                     {divider}
                 </>
             )}
@@ -902,7 +1141,21 @@ function ThermalDocument({
             )}
 
             {/* Therapy, then follow-up + advice. Thermal format. */}
-            {therapyNotes && (
+            {procedures && procedures.length > 0 && (
+                <>
+                    {procedures.filter((p) => p.status === "performed").map((p, i) => (
+                        <div key={`d${i}`} style={th}>+ {p.text}</div>
+                    ))}
+                    {procedures.some((p) => p.status === "planned") && (
+                        <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", margin: "3px 0 2px" }}>{t.plannedNext}</div>
+                    )}
+                    {procedures.filter((p) => p.status === "planned").map((p, i) => (
+                        <div key={`p${i}`} style={th}>&gt; {p.text}{p.due ? ` (${t.dueOn(p.due)})` : ""}</div>
+                    ))}
+                    {divider}
+                </>
+            )}
+            {!procedures && therapyNotes && (
                 <>
                     {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
                         <div key={i} style={th}>+ {line}</div>
@@ -936,6 +1189,50 @@ function ThermalDocument({
                 <div style={{ fontSize: "9px", fontWeight: 700 }}>{doctorName}</div>
                 {config.showQualification && doctorQual && <div style={{ fontSize: "8px" }}>{doctorQual}</div>}
             </div>
+
+            {/* Billing — the same printed twin StandardDocument carries, see
+                that component's own comment on why. */}
+            {billing && (billing.consultationFee != null || billing.medicineTotal > 0 || billing.additionalCharges.length > 0) && (
+                <>
+                    {divider}
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.billing}</div>
+                    {billing.consultationFee != null && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{t.consultationFee}</span><span>Rs.{billing.consultationFee.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.feeGstAmount > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>GST</span><span>Rs.{billing.feeGstAmount.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.medicineTotal > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{t.medicineCharge}</span><span>Rs.{billing.medicineTotal.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.medicineGstAmount > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>GST</span><span>Rs.{billing.medicineGstAmount.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {billing.additionalCharges.map((c, i) => (
+                        <div key={`${c.label}-${i}`} style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{c.label}</span><span>Rs.{c.amount.toFixed(2)}</span>
+                        </div>
+                    ))}
+                    {billing.discountAmount > 0 && (
+                        <div style={{ ...th, display: "flex", justifyContent: "space-between" }}>
+                            <span>{t.discount}{billing.discountPercent != null ? ` (${billing.discountPercent}%)` : ""}</span>
+                            <span>-Rs.{billing.discountAmount.toFixed(2)}</span>
+                        </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "11px", marginTop: 3 }}>
+                        <span>{t.total.toUpperCase()}</span><span>Rs.{billing.total.toFixed(2)}</span>
+                    </div>
+                </>
+            )}
+
             {config.footerNote.trim() && (
                 <div style={{ ...th, textAlign: "center", marginTop: 4 }}>{config.footerNote.trim()}</div>
             )}
@@ -1002,6 +1299,22 @@ function PatientCell({ label, value, bold, mono }: { label: string; value: strin
             }}>
                 {value}
             </div>
+        </div>
+    );
+}
+
+/** One line of the Billing card — label left, amount right, a negative
+ *  amount (the discount row) prints in the same red Clinical Findings
+ *  already uses for an abnormal reading, so it reads as "subtracted"
+ *  without a second colour vocabulary. */
+function BillingRow({ label, amount, size, muted }: { label: string; amount: number; size: string; muted?: boolean }) {
+    const negative = amount < 0;
+    return (
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontSize: size, color: muted ? "#999" : "#333" }}>{label}</span>
+            <span style={{ fontSize: size, fontWeight: 700, color: negative ? "#c0392b" : "#111" }}>
+                {negative ? "−" : ""}₹{Math.abs(amount).toFixed(2)}
+            </span>
         </div>
     );
 }

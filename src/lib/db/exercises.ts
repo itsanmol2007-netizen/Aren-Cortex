@@ -36,6 +36,9 @@ export type DBExerciseRow = {
     side: ExerciseSide | null;
     notes: string | null;
     sort_order: number | null;
+    load_kg?: number | string | null;
+    days_per_week?: number | null;
+    weeks?: number | null;
 };
 
 const toLine = (r: DBExerciseRow, i: number): ExerciseLine => ({
@@ -49,6 +52,9 @@ const toLine = (r: DBExerciseRow, i: number): ExerciseLine => ({
     side: r.side,
     notes: r.notes ?? "",
     sortOrder: r.sort_order ?? i,
+    loadKg: r.load_kg != null ? Number(r.load_kg) : null,
+    daysPerWeek: r.days_per_week ?? null,
+    weeks: r.weeks ?? null,
 });
 
 /**
@@ -75,6 +81,9 @@ export async function saveExercisePlan(
         side: l.side,
         notes: l.notes || null,
         sort_order: i,
+        load_kg: l.loadKg ?? null,
+        days_per_week: l.daysPerWeek ?? null,
+        weeks: l.weeks ?? null,
     }));
     const { error } = await supabase.from("prescription_exercises").insert(rows);
     if (error) throw new Error(`saveExercisePlan: ${error.message}`);
@@ -112,7 +121,7 @@ export async function fetchLastExercisePlan(
 
     const { data: rows, error: eErr } = await supabase
         .from("prescription_exercises")
-        .select("prescription_id, intent_id, label, sets, reps, hold_seconds, per_day, side, notes, sort_order")
+        .select("prescription_id, intent_id, label, sets, reps, hold_seconds, per_day, side, notes, sort_order, load_kg, days_per_week, weeks")
         .in("prescription_id", rxs.map((r) => r.id));
     if (eErr) throw new Error(`fetchLastExercisePlan (exercises): ${eErr.message}`);
     if (!rows?.length) return { lines: [], at: null };

@@ -42,7 +42,10 @@
 import type { Patient, PrescriptionMedicine, SelectedSymptom, Vitals } from "../types";
 import type { ChipOrigin } from "../hooks/useConsultChart";
 import type { ExerciseLine } from "../features/consult/exercisePlan";
+import type { InterventionLine } from "../features/consult/interventionPlan";
+import type { AssessmentLine } from "../features/consult/assessmentPlan";
 import type { Story } from "../features/consult/story";
+import type { SiteRef } from "./body/clinicalSite";
 
 const PREFIX = "aren-cortex:consult-draft:";
 /** A draft older than this is more likely stale than useful — a doctor who
@@ -69,14 +72,16 @@ export interface ChartDraft {
      * refusing to restore the rest of a perfectly good chart.
      */
     symptomDurations?: [string, number][];
+    /** label -> where each local finding was found (entries, same reason). */
+    findingSites?: [string, SiteRef[]][];
 }
 
 /** `useConsultPlan`'s own in-progress-only fields — the ones its `reset()`
- *  clears. `selectedMedicineId`/`stagedMedicine`/`pendingMedicine` are
- *  deliberately excluded: transient mid-pick UI state (a medicine search
- *  result highlighted, a dose being configured before "Accept"), not
- *  recorded content — losing them costs re-opening one picker, not a
- *  recorded reading. */
+ *  clears. `selectedMedicineId`/`stagedMedicine`/`pendingMedicine`/
+ *  `pendingIntervention` are deliberately excluded: transient mid-pick UI
+ *  state (a medicine search result highlighted, a site being confirmed
+ *  before "Add to Plan"), not recorded content — losing them costs
+ *  re-opening one picker, not a recorded reading. */
 export interface PlanDraft {
     prescription: PrescriptionMedicine[];
     selectedTests: string[];
@@ -84,7 +89,9 @@ export interface PlanDraft {
     diagnoses: string[];
     followUpDays: number | null;
     adviceNotes: string;
-    therapyNotes: string;
+    interventionPlan: InterventionLine[];
+    /** optional: drafts saved before assessment lines existed have none */
+    assessmentLines?: AssessmentLine[];
     exercisePlan: ExerciseLine[];
     visitNotes: string;
 }

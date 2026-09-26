@@ -128,3 +128,13 @@
     @apply font-sans;
     }
 }
+
+/* Front Desk's AttachmentPreviewModal.tsx fullscreen skeleton shimmer —
+   a plain global keyframe (Tailwind's arbitrary `animate-[name_...]`
+   only emits the `animation` property, it never generates the keyframe
+   itself). Slow (2.2s), sweeping left -> right, for the delayed
+   full-viewport loading placeholder. */
+@keyframes attach-fullscreen-shimmer {
+  0% { background-position: -150% 0; }
+  100% { background-position: 150% 0; }
+}

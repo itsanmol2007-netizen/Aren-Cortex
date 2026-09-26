@@ -1,0 +1,47 @@
+/* The cross-page deep-link flash `focusAnchor.ts` applies — same visual
+   recipe as `features/settings/settingsFocus.ts`'s `.cx-setting-flash`
+   (three redundant cues: background wash, two-layer ring, a brief scale
+   pop — see that file's own comment for why one alone read too faint), a
+   separate class/file rather than reusing that one directly so this stays
+   loaded by whichever page is the actual DESTINATION of a `requestFocus`
+   call, not gated on the Settings page having mounted first this session. */
+.cx-focus-flash {
+    animation: cx-focus-flash 1.3s cubic-bezier(0.22, 1, 0.36, 1) 2;
+    border-radius: var(--cs-radius, 12px);
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes cx-focus-flash {
+    0% {
+        background-color: rgba(124, 58, 237, 0.16) !important;
+        box-shadow:
+            0 0 0 0 rgba(124, 58, 237, 0.55),
+            0 0 0 0 rgba(124, 58, 237, 0.24) !important;
+        transform: scale(1.015);
+    }
+
+    30% {
+        background-color: rgba(124, 58, 237, 0.1) !important;
+        box-shadow:
+            0 0 0 4px rgba(124, 58, 237, 0.32),
+            0 0 0 9px rgba(124, 58, 237, 0.14) !important;
+        transform: scale(1);
+    }
+
+    100% {
+        background-color: rgba(124, 58, 237, 0) !important;
+        box-shadow:
+            0 0 0 0 rgba(124, 58, 237, 0),
+            0 0 0 0 rgba(124, 58, 237, 0) !important;
+        transform: scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cx-focus-flash {
+        animation: none;
+        background-color: rgba(124, 58, 237, 0.12) !important;
+        box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.4) !important;
+    }
+}

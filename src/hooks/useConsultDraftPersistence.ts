@@ -76,6 +76,9 @@ export function useConsultDraftPersistence({
         chart.restoreChart(draft.chart);
         plan.restorePlan(draft.plan);
         pendingStoryRef.current = { story: draft.story };
+        if (draft.patient?.id) {
+            session.loadPastVisits(draft.patient.id, draft.visitId);
+        }
         // Deliberately doctorId-only — see the ref guard above for why this
         // must run exactly once per doctor rather than react to session/
         // chart/plan identity (which changes every render).
@@ -118,6 +121,7 @@ export function useConsultDraftPersistence({
                     selectedFindings: chart.selectedFindings,
                     chipOrigins: [...chart.chipOrigins],
                     symptomDurations: [...chart.symptomDurations],
+                    findingSites: [...chart.findingSites],
                 },
                 plan: {
                     prescription: plan.prescription,
@@ -126,7 +130,8 @@ export function useConsultDraftPersistence({
                     diagnoses: plan.diagnoses,
                     followUpDays: plan.followUpDays,
                     adviceNotes: plan.adviceNotes,
-                    therapyNotes: plan.therapyNotes,
+                    interventionPlan: plan.interventionPlan,
+                    assessmentLines: plan.assessmentLines,
                     exercisePlan: plan.exercisePlan,
                     visitNotes: plan.visitNotes,
                 },
@@ -141,9 +146,9 @@ export function useConsultDraftPersistence({
     }, [
         doctorId, session.patient, session.visitId,
         chart.vitals, chart.selectedSymptoms, chart.selectedSymptomsWithIntensity,
-        chart.selectedFindings, chart.chipOrigins, chart.symptomDurations,
+        chart.selectedFindings, chart.chipOrigins, chart.symptomDurations, chart.findingSites,
         plan.prescription, plan.selectedTests, plan.selectedLabName, plan.diagnoses,
-        plan.followUpDays, plan.adviceNotes, plan.therapyNotes, plan.exercisePlan, plan.visitNotes,
+        plan.followUpDays, plan.adviceNotes, plan.interventionPlan, plan.assessmentLines, plan.exercisePlan, plan.visitNotes,
         visitStory.story, visitStory.todayScores,
     ]);
 }

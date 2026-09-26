@@ -40,6 +40,8 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useClinicalIdentity } from "../../../hooks/useClinicalIdentity";
+import { useFocusOnMount } from "../../../lib/ui/focusAnchor";
+import "../../../lib/ui/focusAnchor.css";
 import { Card, EmptyBlock, RowText, SkeletonRows, CardPillButton } from "../../clinic/ui";
 import { Delta, HourBars, Ring, ShareBar, TrendChart } from "../charts";
 import { PeriodBar, type PeriodState } from "../PeriodBar";
@@ -137,6 +139,10 @@ function DetailLink({ onClick }: { onClick: () => void }) {
 export function OverviewPage() {
     const identity = useClinicalIdentity();
     const navigate = useNavigate();
+    // Lands and highlights `adm-card-fees` below when Practice's greyed-out
+    // Medicine Pricing card sends someone here via `requestFocus` — see
+    // lib/ui/focusAnchor.ts.
+    useFocusOnMount();
 
     const today = clinicToday();
     const [period, setPeriod] = useState<PeriodState>({ preset: "30d", from: today, to: today });

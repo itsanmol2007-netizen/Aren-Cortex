@@ -16,6 +16,7 @@
    Body:   { purpose: "prescription" | "follow_up",
              patientId, prescriptionId?, visitId?, documentUrl?, followUpDate?,
              language?: "en" | "hi" | "hi-Latn" }
+         | { purpose: "lab_order", handoffId }   ← 2026-09-27, see sendLabOrder
    Reply:  200 { ok: true, messageId, status, balance, provider }
            200 { ok: false, error, message }   ← doctor-actionable (no credits,
                                                   no phone, rate limit, the
@@ -221,13 +222,15 @@ async function callGraphApi(body: unknown): Promise<{ messages: Array<{ id: stri
 
 interface OutMessage {
   to: string;
-  purpose: "prescription" | "follow_up";
+  purpose: "prescription" | "follow_up" | "lab_order";
   language: RxLanguage;
   patientName: string | null;
   clinicName: string;
   doctorName: string;
   documentUrl: string | null;
   followUpDate: string | null;
+  /** lab_order only: {{2}} "Rajesh Kumar (42M)", {{3}} the tests, {{4}} priority */
+  lab?: { patientLabel: string; tests: string; priority: string };
 }
 
 /**
@@ -239,6 +242,15 @@ interface OutMessage {
  * notice the substitution until the patient did.
  */
 function resolveTemplate(purpose: OutMessage["purpose"], language: RxLanguage) {
+  // An investigation order to a lab: one approved English template,
+  // `lab_investigation_order` (Anmol, 2026-09-27). Labs read English; the
+  // doctor's prescription language does not apply to it.
+  if (purpose === "lab_order") {
+    return {
+      name: Deno.env.get("WHATSAPP_TEMPLATE_LAB_ORDER") || "lab_investigation_order",
+      language: Deno.env.get("WHATSAPP_TEMPLATE_LAB_ORDER_LANG") || "en",
+    };
+  }
   // Same three-language shape as prescription, below — added 2026-09-14
   // alongside the follow-up cron (`follow-up-cron/index.ts`), which is the
   // first real caller of a follow-up in anything but English. Until then
@@ -317,7 +329,39 @@ function urlButtonParam(value: string) {
  * (not sent with an empty `parameters` array) — a component for a slot the
  * approved template has no variables in is itself a malformed request.
  */
+/** A template variable may not carry a newline, a tab or a run of spaces. */
+function oneLine(s: string, max = 900): string {
+  const t = s.replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+/**
+ * `lab_investigation_order`, as submitted to Meta (2026-09-27):
+ *   header: "New Investigation Request from {{1}}"      {{1}} clinic name
+ *   body:   {{1}} doctor, {{2}} "Rajesh Kumar (42M)", {{3}} the tests,
+ *           {{4}} priority
+ *   button: "View order" → https://app.arenode.com/lab-orders/{{1}}
+ *           {{1}} the handoff's share token
+ */
+function buildLabComponents(m: OutMessage): unknown[] {
+  const lab = m.lab!;
+  return [
+    { type: "header", parameters: [{ type: "text", text: oneLine(m.clinicName || "a clinic", 60) }] },
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: oneLine(m.doctorName || "The doctor", 120) },
+        { type: "text", text: oneLine(lab.patientLabel, 120) },
+        { type: "text", text: oneLine(lab.tests) },
+        { type: "text", text: oneLine(lab.priority, 40) },
+      ],
+    },
+    { type: "button", sub_type: "url", index: "0", parameters: [urlButtonParam(m.documentUrl || "")] },
+  ];
+}
+
 function buildComponents(m: OutMessage): unknown[] {
+  if (m.purpose === "lab_order") return buildLabComponents(m);
   if (m.purpose === "prescription") {
     const components: unknown[] = [];
 
@@ -388,23 +432,40 @@ async function providerSend(m: OutMessage): Promise<{ providerMessageId: string;
   }
 
   const { name: templateName, language: templateLang } = resolveTemplate(m.purpose, m.language);
-  try {
-    const data = await callGraphApi({
-      messaging_product: "whatsapp",
-      to: m.to,
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: templateLang },
-        components: buildComponents(m),
-      },
-    });
-    return { providerMessageId: data.messages[0].id, name };
-  } catch (e) {
-    const err = new Error((e as Error).message) as Error & { providerDetail?: string };
-    err.providerDetail = (e as Error).message;
-    throw err;
+  // Meta files an "English" template under en, en_US or en_GB depending on
+  // what was picked when it was submitted, and a wrong code reads exactly
+  // like a missing template ("Template not found"). So an English send that
+  // is not found is retried under the other English codes before failing.
+  const langs = templateLang.startsWith("en")
+    ? [templateLang, ...["en", "en_US", "en_GB"].filter((c) => c !== templateLang)]
+    : [templateLang];
+  let last: Error | null = null;
+  for (const code of langs) {
+    try {
+      const data = await callGraphApi({
+        messaging_product: "whatsapp",
+        to: m.to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code },
+          components: buildComponents(m),
+        },
+      });
+      return { providerMessageId: data.messages[0].id, name };
+    } catch (e) {
+      last = e as Error;
+      if (!isTemplateMissing(last.message)) break;
+    }
   }
+  const detail = `${last?.message ?? "send failed"} [template ${templateName}, tried ${langs.join("/")}]`;
+  const err = new Error(detail) as Error & { providerDetail?: string };
+  err.providerDetail = detail;
+  throw err;
+}
+
+function isTemplateMissing(detail: string): boolean {
+  return /template (name )?(does not exist|not found)|132001/i.test(detail);
 }
 
 // ── Context load (ported from service.js loadContext) ─────────────────────
@@ -516,18 +577,72 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
     ? `Prescription for ${ctx.patientName || "patient"}`
     : `Follow-up reminder for ${ctx.patientName || "patient"}`;
 
+  const sent = await chargeAndSend(db, {
+    phone: ctx.phone,
+    patientId: ctx.patientId,
+    prescriptionId: input.prescriptionId,
+    hospitalId: ctx.hospitalId,
+    doctorId: ctx.doctorId,
+    purpose: input.purpose,
+    preview,
+  }, async () => ({
+    to: ctx.phone,
+    purpose: input.purpose,
+    language: input.language,
+    patientName: ctx.patientName,
+    clinicName: ctx.clinicName,
+    doctorName: ctx.doctorName,
+    documentUrl: input.purpose === "prescription"
+      ? (input.documentUrl ?? (await prescriptionShareToken(db, input.prescriptionId)))
+      : null,
+    followUpDate: input.followUpDate,
+  }));
+
+  // Record what language this prescription actually went out in, so the
+  // public page (prescription-preview) can open in the same language
+  // instead of always defaulting to English — see migration
+  // 20260919_prescription_last_sent_language.sql. Best-effort: a doctor's
+  // send must never fail because this one bookkeeping write did.
+  if (input.purpose === "prescription" && input.prescriptionId) {
+    await db.from("prescriptions")
+      .update({ last_sent_language: input.language })
+      .eq("id", input.prescriptionId)
+      .then(({ error }) => {
+        if (error) console.warn(`[messaging-send] last_sent_language update failed: ${error.message}`);
+      });
+  }
+
+  const balance = await currentBalance(db, ctx.doctorId);
+  return { ok: true as const, messageId: sent.messageId, status: "sent", balance, provider: sent.provider };
+}
+
+/**
+ * Log, debit one credit, send, and on failure refund and say so. The one
+ * path every outgoing message takes, whoever it goes to: a prescription or
+ * follow-up to the patient, an investigation order to a lab (every message
+ * spends a credit; Anmol, 2026-09-27).
+ */
+async function chargeAndSend(
+  db: SupabaseClient,
+  log: {
+    phone: string; patientId: string; prescriptionId: string | null; hospitalId: string;
+    doctorId: string; purpose: OutMessage["purpose"]; preview: string;
+  },
+  build: () => Promise<OutMessage>,
+): Promise<{ messageId: number; provider: string }> {
+  const cost = 1;
   const { data: row, error: insertError } = await db
     .from("whatsapp_messages")
     .insert({
       direction: "outbound",
-      phone: ctx.phone,
-      patient_id: ctx.patientId,
-      prescription_id: input.prescriptionId,
-      hospital_id: ctx.hospitalId,
-      doctor_id: ctx.doctorId,
-      purpose: input.purpose,
+      phone: log.phone,
+      patient_id: log.patientId,
+      prescription_id: log.prescriptionId,
+      hospital_id: log.hospitalId,
+      doctor_id: log.doctorId,
+      purpose: log.purpose,
       message_type: "template",
-      body_preview: preview,
+      body_preview: log.preview,
       status: "pending",
       credits_charged: 0,
     })
@@ -540,10 +655,10 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
   let ledgerId: unknown;
   try {
     const { data, error } = await db.rpc("debit_messaging_credit", {
-      p_doctor_id: ctx.doctorId,
+      p_doctor_id: log.doctorId,
       p_credits: cost,
       p_message_id: messageId,
-      p_note: preview,
+      p_note: log.preview,
     });
     if (error) throw error;
     ledgerId = data;
@@ -559,42 +674,12 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
   }
 
   // ── Send ───────────────────────────────────────────────────────────────
-  const buttonParam = input.purpose === "prescription"
-    ? (input.documentUrl ?? (await prescriptionShareToken(db, input.prescriptionId)))
-    : null;
-
   try {
-    const result = await providerSend({
-      to: ctx.phone,
-      purpose: input.purpose,
-      language: input.language,
-      patientName: ctx.patientName,
-      clinicName: ctx.clinicName,
-      doctorName: ctx.doctorName,
-      documentUrl: buttonParam,
-      followUpDate: input.followUpDate,
-    });
-
+    const result = await providerSend(await build());
     await db.from("whatsapp_messages")
       .update({ wa_message_id: result.providerMessageId, status: "sent", credits_charged: cost })
       .eq("id", messageId);
-
-    // Record what language this prescription actually went out in, so the
-    // public page (prescription-preview) can open in the same language
-    // instead of always defaulting to English — see migration
-    // 20260919_prescription_last_sent_language.sql. Best-effort: a doctor's
-    // send must never fail because this one bookkeeping write did.
-    if (input.purpose === "prescription" && input.prescriptionId) {
-      await db.from("prescriptions")
-        .update({ last_sent_language: input.language })
-        .eq("id", input.prescriptionId)
-        .then(({ error }) => {
-          if (error) console.warn(`[messaging-send] last_sent_language update failed: ${error.message}`);
-        });
-    }
-
-    const balance = await currentBalance(db, ctx.doctorId);
-    return { ok: true as const, messageId, status: "sent", balance, provider: result.name };
+    return { messageId, provider: result.name };
   } catch (e) {
     const detail = (e as Error & { providerDetail?: string }).providerDetail
       || (e as Error).message
@@ -622,11 +707,105 @@ async function sendMessage(db: SupabaseClient, input: SendInput) {
     // support can read and action, and support-notify dispatches alerts via Amazon SES.
     console.error(`[messaging-send] send failed (message ${messageId}): ${detail}`);
 
+    if (isTemplateMissing(detail)) {
+      throw new MessagingError(
+        "This WhatsApp template isn't live yet (still in review, or saved under a different name). Your credit has been refunded.",
+        "template_missing",
+      );
+    }
     throw new MessagingError(
       "WhatsApp could not deliver this message. Your credit has been refunded.",
       "send_failed",
     );
   }
+}
+
+// ── An investigation order, to a lab ────────────────────────────────────
+// The handoff row (lab_order_handoffs) was written by the doctor's own
+// session under RLS, with everything the lab's page shows; this sends the
+// template that points at it and marks it sent. The recipient is the lab's
+// number, never the patient's.
+const PRIORITY_LABEL: Record<string, string> = { routine: "Routine", urgent: "Urgent", stat: "STAT" };
+
+async function sendLabOrder(db: SupabaseClient, doctorId: string, handoffId: string) {
+  resolveTemplate("lab_order", "en");
+
+  const { data: h } = await db
+    .from("lab_order_handoffs")
+    .select("id, share_token, hospital_id, patient_id, prescription_id, lab_name, lab_phone, priority, tests, status")
+    .eq("id", handoffId)
+    .maybeSingle();
+  const handoff = h as {
+    id: string; share_token: string; hospital_id: string; patient_id: string; prescription_id: string | null;
+    lab_name: string; lab_phone: string | null; priority: string;
+    tests: { name: string; site?: string | null }[]; status: string;
+  } | null;
+  if (!handoff) throw new MessagingError("That lab order could not be found.", "no_handoff");
+
+  const [doctorRes, patientRes] = await Promise.all([
+    db.from("doctors").select("id, name, hospital_id, hospitals(name)").eq("id", doctorId).maybeSingle(),
+    db.from("patients").select("id, name, age, gender").eq("id", handoff.patient_id).maybeSingle(),
+  ]);
+  const doctor = doctorRes.data as { id: string; name: string | null; hospital_id: string; hospitals?: { name?: string } | null } | null;
+  const patient = patientRes.data as { id: string; name: string | null; age: number | null; gender: string | null } | null;
+  if (!doctor) throw new MessagingError("We could not find your doctor profile.", "no_doctor");
+  if (doctor.hospital_id !== handoff.hospital_id) {
+    throw new MessagingError("That lab order belongs to another clinic.", "cross_clinic");
+  }
+  if (!patient) throw new MessagingError("We could not find that patient.", "no_patient");
+
+  const phone = normalisePhone(handoff.lab_phone);
+  if (!phone) {
+    throw new MessagingError(`${handoff.lab_name} has no WhatsApp number. Add one in Practice > Preferred Labs.`, "no_phone");
+  }
+
+  const before = await currentBalance(db, doctor.id);
+  if (before < 1) {
+    throw new MessagingError("Messaging credits exhausted. Recharge to continue sending messages.", "insufficient_credits");
+  }
+
+  const g = (patient.gender ?? "").trim().charAt(0).toUpperCase();
+  const ageSex = [patient.age != null ? String(patient.age) : "", g].join("");
+  const patientLabel = `${patient.name || "Patient"}${ageSex ? ` (${ageSex})` : ""}`;
+  const tests = (handoff.tests ?? [])
+    .map((t) => (t.site && !t.name.toLowerCase().includes(String(t.site).toLowerCase()) ? `${t.name} - ${t.site}` : t.name))
+    .join(", ");
+  const priority = PRIORITY_LABEL[handoff.priority] ?? "Routine";
+  const clinicName = doctor.hospitals?.name || "the clinic";
+  const doctorName = formatDoctorName(doctor.name);
+
+  let sent: { messageId: number; provider: string };
+  try {
+    sent = await chargeAndSend(db, {
+      phone,
+      patientId: patient.id,
+      prescriptionId: handoff.prescription_id,
+      hospitalId: handoff.hospital_id,
+      doctorId: doctor.id,
+      purpose: "lab_order",
+      preview: `Lab order for ${patient.name || "patient"} to ${handoff.lab_name}`,
+    }, async () => ({
+      to: phone,
+      purpose: "lab_order",
+      language: "en",
+      patientName: patient.name,
+      clinicName,
+      doctorName,
+      documentUrl: handoff.share_token,
+      followUpDate: null,
+      lab: { patientLabel, tests: tests || "Investigations", priority },
+    }));
+  } catch (e) {
+    await db.from("lab_order_handoffs").update({ status: "failed" }).eq("id", handoff.id);
+    throw e;
+  }
+
+  await db.from("lab_order_handoffs")
+    .update({ status: "sent", sent_at: new Date().toISOString(), whatsapp_message_id: sent.messageId })
+    .eq("id", handoff.id);
+
+  const balance = await currentBalance(db, doctor.id);
+  return { ok: true as const, messageId: sent.messageId, status: "sent", balance, provider: sent.provider };
 }
 
 // ── HTTP ──────────────────────────────────────────────────────────────────
@@ -656,6 +835,11 @@ Deno.serve(async (req) => {
     }
 
     const purpose = String(body.purpose ?? "");
+    if (purpose === "lab_order") {
+      const handoffId = String(body.handoffId ?? "").trim();
+      if (!handoffId) return json({ ok: false, error: "no_handoff", message: "No lab order was named." });
+      return json(await sendLabOrder(db, who.doctorId, handoffId));
+    }
     if (purpose !== "prescription" && purpose !== "follow_up") {
       return json({ ok: false, error: "bad_purpose", message: `Unknown message type "${purpose}".` });
     }

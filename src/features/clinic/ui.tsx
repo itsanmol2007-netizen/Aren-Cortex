@@ -447,7 +447,7 @@ export function FormNote({ children }: { children: ReactNode }) {
 // committed. The parent holds the resulting `CompressedImage` in state and
 // passes it back in here as `picked`.
 export function ImagePicker({
-    tone, currentUrl, picked, busy, error, fallbackIcon, onPick, onClear,
+    tone, currentUrl, picked, busy, error, fallbackIcon, onPick, onClear, extraAction,
 }: {
     tone: Tone;
     /** The already-stored image (`hospitals.logo_url` / `doctors.avatar_url`),
@@ -469,6 +469,12 @@ export function ImagePicker({
      *  state alone, so this fires unconditionally whenever there is
      *  something to clear (`currentUrl || picked`). */
     onClear: () => void;
+    /** An extra trigger in the same action row as "Change photo" / "Remove" —
+     *  e.g. the "Remove background" handoff link. Lives here, not below the
+     *  picker on its own line, so it reads as one set of photo actions
+     *  instead of a bolted-on extra row (caught in live testing, 2026-09-19:
+     *  "this could be here", pointing at this exact row). */
+    extraAction?: ReactNode;
 }) {
     const inputId = useId();
     // Revoked on every new pick and on unmount — an object URL nobody revokes
@@ -500,7 +506,7 @@ export function ImagePicker({
                 ) : fallbackIcon}
             </div>
             <div className="flex min-w-0 flex-col gap-[4px]">
-                <div className="flex items-center gap-[10px]">
+                <div className="flex flex-wrap items-center gap-[8px]">
                     <label
                         htmlFor={inputId}
                         /* `inline-flex!`/`gap-[5px]!`: base.css's bare
@@ -540,6 +546,7 @@ export function ImagePicker({
                             Remove
                         </button>
                     )}
+                    {extraAction}
                 </div>
                 {error ? (
                     <span className="text-[10.5px] font-medium text-[var(--cs-red)]">{error}</span>

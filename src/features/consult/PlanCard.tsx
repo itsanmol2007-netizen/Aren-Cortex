@@ -16,11 +16,15 @@
 import { useRef, useState } from "react";
 import {
     Activity, CalendarClock, CalendarDays, Clock, FileText, FlaskConical, Keyboard,
-    NotebookPen, Pill, Printer, Stethoscope, Utensils, Waves, X,
+    MapPin, NotebookPen, Pill, Plus, Printer, Stethoscope, Utensils, Waves, X,
 } from "lucide-react";
 import type { PrescriptionMedicine } from "../../types";
 import type { CompanionSuggestion } from "../../lib/synapse/companions";
 import type { PreferredLab } from "../../lib/db/synapse";
+import type { InterventionLine } from "./interventionPlan";
+import { formatDue, formatSide as formatInterventionSide } from "./interventionPlan";
+import type { PlannedIntervention } from "../../lib/db/interventions";
+import type { FollowOn } from "./followOns";
 import { freqLabelToKeys, keysToFreqLabel } from "../../lib/db";
 import { BlankPlanArt } from "./BlankArt";
 import { CompanionLine, MedicineIdentity } from "./parts";
@@ -164,12 +168,20 @@ interface Props {
     /** "+ Add your preferred lab" when the list is empty — jumps to Practice. */
     onManageLabs: () => void;
     adviceLines: string[];
-    therapyLines: string[];
+    interventions: InterventionLine[];
     /** the home programme, already formatted — see exercisePlan.formatLine */
     exerciseLines: { id: string; text: string }[];
     onRemoveExercise: (id: string) => void;
     onRemoveAdviceLine: (line: string) => void;
-    onRemoveTherapyLine: (line: string) => void;
+    onRemoveIntervention: (id: string) => void;
+    onAddAnotherInterventionSite: (id: string) => void;
+    /** planned at an earlier visit and not yet done — each with Perform */
+    plannedEarlier?: PlannedIntervention[];
+    onPerformPlanned?: (p: PlannedIntervention) => void;
+    /** "what usually comes next" after an intervention — chips on its line,
+     *  one click to add, never added on their own (followOns.ts) */
+    followOnsFor?: (line: InterventionLine) => FollowOn[];
+    onFollowOn?: (f: FollowOn) => void;
     followUpDays: number | null;
     onFollowUpChange: (days: number | null) => void;
     notes: string;
@@ -206,7 +218,8 @@ export function PlanCard({
     tests, onRemoveTest,
     preferredLabs, selectedLabName, onSelectLabName, onManageLabs,
     adviceLines, onRemoveAdviceLine,
-    therapyLines, onRemoveTherapyLine,
+    interventions, onRemoveIntervention, onAddAnotherInterventionSite,
+    plannedEarlier = [], onPerformPlanned, followOnsFor, onFollowOn,
     exerciseLines, onRemoveExercise,
     followUpDays, onFollowUpChange,
     notes, onNotesChange,
@@ -278,9 +291,21 @@ export function PlanCard({
         }
     };
 
+    // Interventions and exercises count: a visit that was only a cast is
+    // not an empty plan, and must still reach Review & Print.
     const itemCount =
         diagnoses.length + prescription.length + tests.length + adviceLines.length +
+        interventions.length + exerciseLines.length +
         (followUpDays != null ? 1 : 0);
+
+    // Performing an earlier plan takes it off "due" the moment it is added.
+    const fulfilledIds = new Set(interventions.map((l) => l.fulfilsId).filter(Boolean));
+    const dueEarlier = plannedEarlier.filter((p) => !fulfilledIds.has(p.id));
+    const doneToday = interventions.filter((l) => l.status !== "planned");
+    // Follow-ons already taken (or waved away) on a line, so each chip is
+    // offered once: "lineId:key".
+    const [followOnsUsed, setFollowOnsUsed] = useState<Set<string>>(new Set());
+    const plannedNow = interventions.filter((l) => l.status === "planned");
 
     const isEmpty = itemCount === 0;
 
@@ -336,7 +361,7 @@ export function PlanCard({
                 the arrows have to keep working from there as the cursor moves
                 to lines that were never focused. */}
             <div className="cs-plan-scroll" ref={scrollRef} onKeyDown={onListKeyDown}>
-                {isEmpty ? (
+                {isEmpty && dueEarlier.length === 0 ? (
                     <div className="cs-plan-empty">
                         <BlankPlanArt />
                         <strong>Nothing planned yet</strong>
@@ -608,30 +633,122 @@ export function PlanCard({
                             </Group>
                         )}
 
-                        {therapyLines.length > 0 && (
+                        {dueEarlier.length > 0 && (
                             <Group
                                 icon={<Waves size={12} />}
                                 tone="teal"
-                                title="Therapy — this session"
-                                count={therapyLines.length}
+                                title="Due from earlier visits"
+                                count={dueEarlier.length}
                             >
-                                {therapyLines.map((line) => (
-                                    <div key={line} className={`cs-line${justAdded.has(line) ? " is-new" : ""}`}>
+                                {dueEarlier.map((p) => (
+                                    <div key={p.id} className="cs-line">
                                         <div className="cs-line-main">
-                                            <div className="cs-line-name"><span>{line}</span></div>
+                                            <div className="cs-line-name"><span>{p.text}</span></div>
+                                            <div className="cs-line-tags">
+                                                <span className="cs-line-tag is-freq">
+                                                    {p.dueDate ? `Due ${formatDue(p.dueDate)}` : "Planned"} · from {p.when}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            className="cs-x"
-                                            aria-label={`Remove ${line}`}
-                                            onClick={(e) => { e.stopPropagation(); onRemoveTherapyLine(line); }}
-                                        >
-                                            <X size={13} />
-                                        </button>
+                                        {onPerformPlanned && (
+                                            <button
+                                                type="button"
+                                                className="cs-dose-more"
+                                                onClick={(e) => { e.stopPropagation(); onPerformPlanned(p); }}
+                                            >
+                                                Perform
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </Group>
                         )}
+
+                        {([["Interventions — done today", doneToday], ["Interventions — planned", plannedNow]] as const).map(([title, lines]) =>
+                            lines.length > 0 && (
+                            <Group
+                                key={title}
+                                icon={<Waves size={12} />}
+                                tone="teal"
+                                title={title}
+                                count={lines.length}
+                            >
+                                {lines.map((line) => {
+                                    const sideTag = formatInterventionSide(line.side);
+                                    return (
+                                        <div key={line.id} className={`cs-line${justAdded.has(line.id) ? " is-new" : ""}`}>
+                                            <div className="cs-line-main">
+                                                {/* A configured intervention carries its whole line
+                                                    ("Cast — Left forearm, below-elbow, backslab, POP");
+                                                    its site is inside that line, not a second tag. */}
+                                                <div className="cs-line-name"><span>{line.text || line.label}</span></div>
+                                                {((!line.text && line.site) || sideTag || line.notes || line.status === "planned") && (
+                                                    <div className="cs-line-tags">
+                                                        {line.status === "planned" && (
+                                                            <span className="cs-line-tag is-freq">
+                                                                {line.dueDate ? `Due ${formatDue(line.dueDate)}` : "Planned"}
+                                                            </span>
+                                                        )}
+                                                        {!line.text && line.site && (
+                                                            <span className="cs-line-tag is-dose">
+                                                                <MapPin size={10} aria-hidden="true" /> {line.site}
+                                                            </span>
+                                                        )}
+                                                        {sideTag && (
+                                                            <span className="cs-line-tag is-freq">{sideTag}</span>
+                                                        )}
+                                                        {line.notes && (
+                                                            <span className="cs-line-tag is-notes">
+                                                                <Utensils size={10} aria-hidden="true" /> {line.notes}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {(() => {
+                                                    const next = (followOnsFor?.(line) ?? [])
+                                                        .filter((f) => !followOnsUsed.has(`${line.id}:${f.key}`));
+                                                    if (!next.length || !onFollowOn) return null;
+                                                    return (
+                                                        <div className="cs-followons">
+                                                            <span>Next</span>
+                                                            {next.map((f) => (
+                                                                <button
+                                                                    key={f.key}
+                                                                    type="button"
+                                                                    className="cs-followon"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setFollowOnsUsed((u) => new Set(u).add(`${line.id}:${f.key}`));
+                                                                        onFollowOn(f);
+                                                                    }}
+                                                                >
+                                                                    <Plus size={10} aria-hidden="true" /> {f.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="cs-x"
+                                                aria-label={`Remove ${line.label}`}
+                                                onClick={(e) => { e.stopPropagation(); onRemoveIntervention(line.id); }}
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="cs-dose-more"
+                                                onClick={(e) => { e.stopPropagation(); onAddAnotherInterventionSite(line.id); }}
+                                            >
+                                                + Another site
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </Group>
+                        ))}
 
                         {adviceLines.length > 0 && (
                             <Group

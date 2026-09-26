@@ -86,16 +86,17 @@ function MoneyField({
 
 /** A switch row: label, one-line explanation, and the control on the right. */
 function ToggleRow({
-    id, label, hint, checked, onChange,
+    id, label, hint, checked, onChange, disabled,
 }: {
     id: string;
     label: string;
     hint: string;
     checked: boolean;
     onChange: (v: boolean) => void;
+    disabled?: boolean;
 }) {
     return (
-        <div className="flex items-center gap-[12px] rounded-[10px] border border-[var(--cs-line)] bg-[rgba(248,250,252,0.7)] px-[12px] py-[9px]">
+        <div className={`flex items-center gap-[12px] rounded-[10px] border border-[var(--cs-line)] bg-[rgba(248,250,252,0.7)] px-[12px] py-[9px] ${disabled ? "opacity-60" : ""}`}>
             <div className="flex min-w-0 flex-col gap-[1px]">
                 <label htmlFor={id} className="cursor-pointer text-[12px]! font-semibold text-[var(--cs-ink)]">
                     {label}
@@ -108,10 +109,11 @@ function ToggleRow({
                 role="switch"
                 aria-checked={checked}
                 aria-label={label}
+                disabled={disabled}
                 onClick={() => onChange(!checked)}
                 className={
                     "ml-auto flex h-[22px] w-[38px] flex-none cursor-pointer items-center rounded-full border-0 p-[2px] " +
-                    "outline-none transition-colors focus-visible:shadow-[0_0_0_3px_var(--cs-violet-soft)] " +
+                    "outline-none transition-colors focus-visible:shadow-[0_0_0_3px_var(--cs-violet-soft)] disabled:cursor-not-allowed " +
                     (checked ? "bg-[var(--cs-violet)]" : "bg-[#cbd5e1]")
                 }
             >
@@ -149,6 +151,8 @@ export function FeesModal({
     const [gstEnabled, setGstEnabled] = useState(policy.gstEnabled);
     const [gstPercent, setGstPercent] = useState(String(policy.gstPercent));
     const [allowDiscount, setAllowDiscount] = useState(policy.allowDiscount);
+    const [medicineBillingEnabled, setMedicineBillingEnabled] = useState(policy.medicineBillingEnabled);
+    const [medicineGstEnabled, setMedicineGstEnabled] = useState(policy.medicineGstEnabled);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -160,7 +164,9 @@ export function FeesModal({
         feesDirty ||
         gstEnabled !== policy.gstEnabled ||
         allowDiscount !== policy.allowDiscount ||
-        Number(gstPercent) !== policy.gstPercent;
+        Number(gstPercent) !== policy.gstPercent ||
+        medicineBillingEnabled !== policy.medicineBillingEnabled ||
+        medicineGstEnabled !== policy.medicineGstEnabled;
 
     const percentInvalid = gstEnabled && !(Number(gstPercent) >= 0 && Number(gstPercent) <= 100);
 
@@ -177,6 +183,10 @@ export function FeesModal({
                 gstEnabled,
                 gstPercent: Number(gstPercent),
                 allowDiscount,
+                medicineBillingEnabled,
+                // Never persisted true underneath a clinic that has no GST at
+                // all — see the ToggleRow's own gating below.
+                medicineGstEnabled: gstEnabled && medicineGstEnabled,
             });
 
             // Only the doctors whose numbers actually changed. A clinic with
@@ -324,6 +334,45 @@ export function FeesModal({
                         checked={allowDiscount}
                         onChange={setAllowDiscount}
                     />
+                </section>
+
+                {/* ── Medicine billing ─────────────────────────────────── */}
+                <section className="flex flex-col gap-[9px]">
+                    <div className="flex flex-col gap-[2px]">
+                        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--cs-ink)]">
+                            Medicine billing
+                        </span>
+                        <FormNote>
+                            For a clinic that resells the medicine it dispenses — adds a per-visit
+                            medicine total to the consultation fee. Off by default; nothing changes
+                            for a clinic that never turns it on.
+                        </FormNote>
+                    </div>
+
+                    <ToggleRow
+                        id="fees-medicine-billing"
+                        label="Bill dispensed medicine"
+                        hint="Doctors can price and quantity a medicine on the prescription."
+                        checked={medicineBillingEnabled}
+                        onChange={setMedicineBillingEnabled}
+                    />
+
+                    {medicineBillingEnabled && (
+                        <div className="pl-[12px]">
+                            <ToggleRow
+                                id="fees-medicine-gst"
+                                label="Add GST to medicine too"
+                                hint={
+                                    gstEnabled
+                                        ? "Same rate as the consultation fee above."
+                                        : "Turn on \"Add GST to the fee\" above first."
+                                }
+                                checked={gstEnabled && medicineGstEnabled}
+                                onChange={setMedicineGstEnabled}
+                                disabled={!gstEnabled}
+                            />
+                        </div>
+                    )}
                 </section>
 
                 {error && <FormError message={error} />}
