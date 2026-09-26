@@ -2179,6 +2179,27 @@ export interface PreferredLab {
     contactNote: string | null;
     isDefault: boolean;
     sortOrder: number;
+    /** where an investigation order can be sent (optional) */
+    whatsappPhone: string | null;
+    /** plain address / landmark, shown to the patient */
+    address: string | null;
+    /** a Google Maps link the doctor pasted; the patient's Navigate button */
+    mapsUrl: string | null;
+}
+
+const LAB_COLUMNS = "id, name, contact_note, is_default, sort_order, whatsapp_phone, address, maps_url";
+
+function labFromRow(r: any): PreferredLab {
+    return {
+        id: Number(r.id),
+        name: r.name,
+        contactNote: r.contact_note ?? null,
+        isDefault: !!r.is_default,
+        sortOrder: Number(r.sort_order ?? 0),
+        whatsappPhone: r.whatsapp_phone ?? null,
+        address: r.address ?? null,
+        mapsUrl: r.maps_url ?? null,
+    };
 }
 
 const preferredLabsCacheKey = (doctorId: string) => `preferred_labs.${doctorId}`;
@@ -2195,18 +2216,12 @@ export async function loadPreferredLabs(doctorId: string): Promise<PreferredLab[
 async function loadPreferredLabsFromNetwork(doctorId: string): Promise<PreferredLab[]> {
     const { data, error } = await supabase
         .from("doctor_preferred_labs")
-        .select("id, name, contact_note, is_default, sort_order")
+        .select(LAB_COLUMNS)
         .eq("doctor_id", doctorId)
         .order("sort_order", { ascending: true })
         .order("id", { ascending: true });
     if (error) throw new Error(`doctor_preferred_labs (load): ${error.message}`);
-    return (data ?? []).map((r: any) => ({
-        id: Number(r.id),
-        name: r.name,
-        contactNote: r.contact_note ?? null,
-        isDefault: !!r.is_default,
-        sortOrder: Number(r.sort_order ?? 0),
-    }));
+    return (data ?? []).map(labFromRow);
 }
 
 /** Just the default, for Consult's plan-rail prompt — one row, not the list. */
@@ -2220,18 +2235,12 @@ export async function loadDefaultPreferredLab(doctorId: string): Promise<Preferr
 async function loadDefaultPreferredLabFromNetwork(doctorId: string): Promise<PreferredLab | null> {
     const { data, error } = await supabase
         .from("doctor_preferred_labs")
-        .select("id, name, contact_note, is_default, sort_order")
+        .select(LAB_COLUMNS)
         .eq("doctor_id", doctorId)
         .eq("is_default", true)
         .maybeSingle();
     if (error) throw new Error(`doctor_preferred_labs (default): ${error.message}`);
-    return !data ? null : {
-        id: Number(data.id),
-        name: data.name,
-        contactNote: data.contact_note ?? null,
-        isDefault: true,
-        sortOrder: Number(data.sort_order ?? 0),
-    };
+    return !data ? null : labFromRow(data);
 }
 
 export async function addPreferredLab(opts: {
@@ -2239,6 +2248,9 @@ export async function addPreferredLab(opts: {
     hospitalId: string;
     name: string;
     contactNote?: string | null;
+    whatsappPhone?: string | null;
+    address?: string | null;
+    mapsUrl?: string | null;
     /** first lab a doctor adds becomes the default automatically — see call site */
     makeDefault?: boolean;
 }): Promise<PreferredLab> {
@@ -2270,19 +2282,58 @@ export async function addPreferredLab(opts: {
             hospital_id: opts.hospitalId,
             name,
             contact_note: opts.contactNote?.trim() || null,
+            whatsapp_phone: opts.whatsappPhone?.trim() || null,
+            address: opts.address?.trim() || null,
+            maps_url: opts.mapsUrl?.trim() || null,
             is_default: !!opts.makeDefault,
             sort_order: nextOrder,
         })
-        .select("id, name, contact_note, is_default, sort_order")
+        .select(LAB_COLUMNS)
         .single();
     if (error) throw new Error(`doctor_preferred_labs (add): ${error.message}`);
-    return {
-        id: Number(data.id),
-        name: data.name,
-        contactNote: data.contact_note ?? null,
-        isDefault: !!data.is_default,
-        sortOrder: Number(data.sort_order ?? 0),
-    };
+    return labFromRow(data);
+}
+
+/** The lab's contact and place, edited after it was added. */
+export async function updatePreferredLab(id: number, fields: {
+    name?: string;
+    whatsappPhone?: string | null;
+    address?: string | null;
+    mapsUrl?: string | null;
+}): Promise<PreferredLab> {
+    const patch: Record<string, unknown> = {};
+    if (fields.name !== undefined) patch.name = fields.name.trim();
+    if (fields.whatsappPhone !== undefined) patch.whatsapp_phone = fields.whatsappPhone?.trim() || null;
+    if (fields.address !== undefined) patch.address = fields.address?.trim() || null;
+    if (fields.mapsUrl !== undefined) patch.maps_url = fields.mapsUrl?.trim() || null;
+    const { data, error } = await supabase
+        .from("doctor_preferred_labs")
+        .update(patch)
+        .eq("id", id)
+        .select(LAB_COLUMNS)
+        .single();
+    if (error) throw new Error(`doctor_preferred_labs (update): ${error.message}`);
+    return labFromRow(data);
+}
+
+/**
+ * What a pasted Google Maps link points at, read from its redirect (the
+ * `maps-link-resolve` function; no Maps API). Null when it can't tell —
+ * the link itself still works for the patient's Navigate button.
+ */
+export async function resolveMapsLink(url: string): Promise<{ name: string | null; lat: number | null; lng: number | null } | null> {
+    try {
+        const { data, error } = await supabase.functions.invoke("maps-link-resolve", { body: { url } });
+        if (error || !data?.ok) return null;
+        return { name: data.name ?? null, lat: data.lat ?? null, lng: data.lng ?? null };
+    } catch {
+        return null;
+    }
+}
+
+/** "https://…" when it looks like a web link at all. */
+export function looksLikeLink(s: string): boolean {
+    return /^https?:\/\/\S+$/i.test(s.trim());
 }
 
 export async function removePreferredLab(id: number): Promise<void> {

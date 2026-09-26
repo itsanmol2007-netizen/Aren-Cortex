@@ -70,8 +70,9 @@ import {
     ArrowDown, ArrowUp, BookText, Check, ChevronDown, ChevronRight, Clock, Dumbbell, FlaskConical, Heart,
     IndianRupee, Layers,
     MoreHorizontal, Pill, Plus, Printer, Receipt, Settings, Shield, SlidersHorizontal, Sparkles, Star,
-    ToggleLeft, ToggleRight, User, X,
+    ToggleLeft, ToggleRight, User, X, MapPin, MessageCircle, Pencil,
 } from "lucide-react";
+import { LabFields, EMPTY_LAB, phoneProblem, type LabDraft } from "./LabFields";
 import { WorkspaceHeader } from "../../components/WorkspaceHeader";
 import { useClinicalIdentity } from "../../hooks/useClinicalIdentity";
 import { requestFocus } from "../../lib/ui/focusAnchor";
@@ -100,7 +101,7 @@ import {
     fetchDoctorFreeTermDetails, fetchHospitalAddedMedicines, fetchHospitalCompanionDetails,
     fetchPrescriptionTemplateDetail,
     loadPreferredLabs, loadPrescriptionTemplateSummaries, removePreferredLab,
-    replacePrescriptionTemplateItems, reorderPreferredLabs, saveDoctorFreeTerm,
+    replacePrescriptionTemplateItems, reorderPreferredLabs, saveDoctorFreeTerm, updatePreferredLab,
     setClinicBrandDefault, setDefaultPreferredLab, setDoctorMeasurePrefs,
     setHospitalCompanionCuration, updatePrescriptionTemplateMeta,
     type AuthoredCompanionEdgeDetail, type ClinicBrandDefaultDetail, type DoctorFreeTermDetail,
@@ -1054,20 +1055,33 @@ function LabsModal({
     onChange: (labs: PreferredLab[]) => void;
     onClose: () => void;
 }) {
-    const [name, setName] = useState("");
-    const [contactNote, setContactNote] = useState("");
+    const [draft, setDraft] = useState<LabDraft>(EMPTY_LAB);
     const [busy, setBusy] = useState(false);
+    /** the lab being edited in place, and its draft */
+    const [editing, setEditing] = useState<{ id: number; draft: LabDraft } | null>(null);
 
     const refresh = () => loadPreferredLabs(doctorId).then(onChange).catch(console.error);
 
     const submitAdd = () => {
-        const trimmed = name.trim();
-        if (!trimmed || busy) return;
+        const trimmed = draft.name.trim();
+        if (!trimmed || busy || phoneProblem(draft.whatsappPhone)) return;
         setBusy(true);
-        addPreferredLab({ doctorId, hospitalId, name: trimmed, contactNote, makeDefault: labs.length === 0 })
-            .then(() => { setName(""); setContactNote(""); return refresh(); })
+        addPreferredLab({
+            doctorId, hospitalId, name: trimmed, makeDefault: labs.length === 0,
+            whatsappPhone: draft.whatsappPhone, address: draft.address, mapsUrl: draft.mapsUrl,
+        })
+            .then(() => { setDraft(EMPTY_LAB); return refresh(); })
             .catch(console.error)
             .finally(() => setBusy(false));
+    };
+
+    const saveEdit = () => {
+        if (!editing || !editing.draft.name.trim() || phoneProblem(editing.draft.whatsappPhone)) return;
+        const { id, draft: d } = editing;
+        setEditing(null);
+        updatePreferredLab(id, { name: d.name, whatsappPhone: d.whatsappPhone, address: d.address, mapsUrl: d.mapsUrl })
+            .then(refresh)
+            .catch(console.error);
     };
 
     const removeLab = (id: number) => {
@@ -1088,6 +1102,8 @@ function LabsModal({
         reorderPreferredLabs(next.map((l, i) => ({ id: l.id, sortOrder: i }))).catch(console.error);
     };
 
+    const dirty = Object.values(draft).some((v) => v.trim()) || !!editing;
+
     return (
         <PracticeModal
             accent="slate"
@@ -1096,26 +1112,16 @@ function LabsModal({
             title="Your diagnostic centres"
             onClose={onClose}
             wide
-            dirty={!!name.trim() || !!contactNote.trim()}
+            dirty={dirty}
             footer={<button type="button" className="prac-modal-btn is-primary" onClick={onClose}>Done</button>}
         >
-            <div className="prac-modal-field">
-                <label>Add a lab</label>
-                <input
-                    type="text" value={name} placeholder="e.g. City Diagnostics"
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
-                />
-            </div>
-            <div className="prac-modal-field">
-                <label>Note (optional)</label>
-                <input
-                    type="text" value={contactNote} placeholder="Phone, address, or how you refer"
-                    onChange={(e) => setContactNote(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
-                />
-            </div>
-            <button type="button" className="prac-modal-btn is-primary is-compact" disabled={!name.trim() || busy} onClick={submitAdd}>
+            <div className="prac-modal-section-title">Add a lab</div>
+            <LabFields value={draft} onChange={setDraft} onSubmit={submitAdd} />
+            <button
+                type="button" className="prac-modal-btn is-primary is-compact"
+                disabled={!draft.name.trim() || busy || !!phoneProblem(draft.whatsappPhone)}
+                onClick={submitAdd}
+            >
                 <Plus size={14} /> Add lab
             </button>
 
@@ -1124,7 +1130,21 @@ function LabsModal({
                 <p className="prac-soon">Nothing added yet. The first one becomes your default.</p>
             ) : (
                 <div className="prac-modal-rows">
-                    {labs.map((lab, i) => (
+                    {labs.map((lab, i) => editing?.id === lab.id ? (
+                        <div key={lab.id} className="prac-lab-edit">
+                            <LabFields value={editing.draft} onChange={(d) => setEditing({ id: lab.id, draft: d })} onSubmit={saveEdit} autoFocus />
+                            <div className="prac-lab-edit-foot">
+                                <button type="button" className="prac-modal-btn is-compact" onClick={() => setEditing(null)}>Cancel</button>
+                                <button
+                                    type="button" className="prac-modal-btn is-primary is-compact"
+                                    disabled={!editing.draft.name.trim() || !!phoneProblem(editing.draft.whatsappPhone)}
+                                    onClick={saveEdit}
+                                >
+                                    <Check size={14} /> Save
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
                         <div key={lab.id} className="prac-modal-row">
                             <button
                                 type="button"
@@ -1136,8 +1156,24 @@ function LabsModal({
                             </button>
                             <div className="prac-med-info">
                                 <span className="prac-row-label">{lab.name}</span>
-                                {lab.contactNote && <span className="prac-med-brands">{lab.contactNote}</span>}
+                                <span className="prac-lab-meta">
+                                    {lab.whatsappPhone
+                                        ? <span className="is-on"><MessageCircle size={11} aria-hidden="true" /> {lab.whatsappPhone}</span>
+                                        : <span className="is-off">No WhatsApp number</span>}
+                                    {lab.address && <span><MapPin size={11} aria-hidden="true" /> {lab.address}</span>}
+                                    {!lab.address && lab.mapsUrl && <span><MapPin size={11} aria-hidden="true" /> Map link added</span>}
+                                    {!lab.address && !lab.mapsUrl && lab.contactNote && <span>{lab.contactNote}</span>}
+                                </span>
                             </div>
+                            <button
+                                type="button" className="prac-lab-editbtn" aria-label={`Edit ${lab.name}`}
+                                onClick={() => setEditing({
+                                    id: lab.id,
+                                    draft: { name: lab.name, whatsappPhone: lab.whatsappPhone ?? "", address: lab.address ?? "", mapsUrl: lab.mapsUrl ?? "" },
+                                })}
+                            >
+                                <Pencil size={12} /> Edit
+                            </button>
                             <div className="prac-reorder">
                                 <button type="button" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp size={12} /></button>
                                 <button type="button" disabled={i === labs.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown size={12} /></button>

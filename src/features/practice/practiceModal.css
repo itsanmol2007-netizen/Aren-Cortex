@@ -649,3 +649,74 @@
     font-weight: 600;
 }
 .prac-modal-field.prac-cfg-row input { height: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Preferred lab fields (LabFields.tsx, 2026-09-27) ─────────────────── */
+.prac-lab-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 14px;
+}
+.prac-lab-fields .prac-modal-field.is-wide { grid-column: 1 / -1; }
+.prac-lab-fields .prac-modal-field label { display: inline-flex; align-items: center; gap: 5px; }
+.prac-lab-fields .prac-modal-field label em {
+    color: var(--cs-faint);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 500;
+}
+.prac-lab-fields input[aria-invalid="true"] { border-color: #f1a8a3; }
+.prac-lab-err { color: var(--cs-red); font-size: 11px; font-weight: 600; }
+.prac-lab-found {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--cs-teal);
+    font-size: 11.5px;
+    font-weight: 600;
+    animation: cs-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.prac-lab-found b { color: var(--cs-ink); font-weight: 700; }
+.prac-lab-found.is-reading,
+.prac-lab-found.is-plain { color: var(--cs-faint); }
+
+.prac-lab-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    color: var(--cs-faint);
+    font-size: 11px;
+    font-weight: 500;
+}
+.prac-lab-meta > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.prac-lab-meta > span.is-on { color: #15803d; font-weight: 600; }
+.prac-lab-meta > span.is-off { font-style: italic; }
+.prac-lab-editbtn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    border: 1px solid var(--cs-line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 10px;
+    color: var(--cs-label);
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.prac-lab-editbtn:hover { border-color: var(--cs-blue); color: var(--cs-blue); }
+.prac-lab-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid #c9d6ee;
+    border-radius: 12px;
+    background: #fbfcff;
+    padding: 12px;
+    animation: cs-panel-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.prac-lab-edit-foot { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 640px) {
+    .prac-lab-fields { grid-template-columns: 1fr; }
+}
