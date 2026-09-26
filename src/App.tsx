@@ -21,6 +21,7 @@ import { NV_CHECKS, NV_REGIONS, nvKey } from "./features/consult/NeurovascularCh
 import { dashText } from "./lib/clinicalText";
 import { recordInvestigationResult, recordStateEvent, STATUS_LABEL } from "./lib/db/clinicalState";
 import { ResultSheet, type ResultDraft } from "./features/consult/ResultSheet";
+import { SendToLabSheet } from "./features/consult/SendToLabSheet";
 import type { AssessmentLine } from "./features/consult/assessmentPlan";
 import { searchIntents } from "./lib/db/synapse";
 import { PatientHeader } from "./components/PatientHeader";
@@ -1875,6 +1876,9 @@ function App() {
   const [resultsToday, setResultsToday] = useState<Map<string, string>>(() => new Map());
   /** the awaited investigation whose result sheet is open */
   const [resultSheetFor, setResultSheetFor] = useState<OngoingItem | null>(null);
+  /** "Send to lab" (Review): open, and the lab it went to this visit */
+  const [labSheetOpen, setLabSheetOpen] = useState(false);
+  const [labSentTo, setLabSentTo] = useState<string | null>(null);
   /** what each result recorded this visit was made of, so it reopens for editing */
   const [resultDrafts, setResultDrafts] = useState<Map<string, ResultDraft>>(() => new Map());
   const findResultAssessments = useCallback(
@@ -1888,6 +1892,8 @@ function App() {
     setResultsToday(new Map());
     setResultDrafts(new Map());
     setResultSheetFor(null);
+    setLabSheetOpen(false);
+    setLabSentTo(null);
     setContinued(false);
   }, [patient?.id]);
   // A result read at THIS visit and saved already (the consult was reopened,
@@ -2086,6 +2092,18 @@ function App() {
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
 
+  // The lab order's "why" and "what happened", from today's consult only:
+  // how it happened (with when), the working assessment; then the
+  // complaints and findings with their places, pain and any neurovascular
+  // abnormality. Never past history, medicines or billing.
+  const labIndication = useMemo(() => {
+    const s = visitStory.story;
+    const how = s.mechanism.trim();
+    const when = s.durationText?.trim() || (s.duration ? DURATION_LABEL[s.duration] : "");
+    const mech = how ? `${how}${when ? `, ${when} ago` : ""}` : "";
+    return [mech, ...diagnoses].filter(Boolean).join("; ");
+  }, [visitStory.story, diagnoses]);
+
   const printNeuro = useMemo(() => {
     const out: { text: string; abnormal: boolean }[] = [];
     for (const m of markedExam.sites) {
@@ -2103,6 +2121,17 @@ function App() {
     }
     return out;
   }, [markedExam.sites, examination]);
+
+  const labContext = useMemo(() => {
+    const pain = Number((vitals as Record<string, unknown> | null)?.painVas);
+    return [
+      ...chart.symptomsForRecord,
+      ...chart.findingsForRecord,
+      ...(Number.isFinite(pain) && pain > 0 ? [`Pain ${pain}/10`] : []),
+      ...printNeuro.filter((n) => n.abnormal).map((n) => n.text),
+    ].join("; ");
+  }, [chart.symptomsForRecord, chart.findingsForRecord, vitals, printNeuro]);
+
 
 
   /**
@@ -3552,6 +3581,8 @@ function App() {
             // Closing (`closeReview`) is then the "Complete & Next". Later
             // presses retry only the push. Plain "Confirm & Save" never sends.
             onSendWhatsApp={sendReviewOnWhatsApp}
+            onSendToLab={identity.isReal && identity.hospitalId ? () => setLabSheetOpen(true) : undefined}
+            labSentTo={labSentTo}
             onClose={closeReview}
             followUpDays={followUpDays}
             adviceNotes={reviewAdvice}
@@ -3567,6 +3598,23 @@ function App() {
           />
         )
       }
+      {!isFeaturePage && isReviewOpen && labSheetOpen && patient?.id && identity.hospitalId && (
+        <SendToLabSheet
+          tests={selectedTests}
+          labs={preferredLabs}
+          initialLabName={selectedLabName}
+          patient={{ id: patient.id ?? "", name: patient.name, age: patient.age ?? null, gender: patient.gender ?? null }}
+          hospitalId={identity.hospitalId}
+          doctorId={identity.isReal ? identity.doctorId : null}
+          visitId={visitId}
+          prescriptionId={null}
+          defaultIndication={labIndication}
+          defaultContext={labContext}
+          onLabsChanged={setPreferredLabs}
+          onSent={(name) => setLabSentTo(name)}
+          onClose={() => setLabSheetOpen(false)}
+        />
+      )}
     </div >
   );
 }

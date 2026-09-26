@@ -22,7 +22,7 @@ import { useParams } from "react-router-dom";
 import {
     Sunrise, Sun, Sunset, Moon, Utensils, UtensilsCrossed,
     Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert, IndianRupee,
-    FlaskConical, Bandage, Dumbbell,
+    FlaskConical, Bandage, Dumbbell, MapPin, Navigation,
 } from "lucide-react";
 import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine, type PublicRxBilling } from "./api";
 import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
@@ -151,6 +151,36 @@ const SECTION_TONE = {
     teal: "bg-teal-100 text-teal-700",
     violet: "bg-violet-100 text-violet-700",
 } as const;
+
+/** The investigations card and the way to the lab, in plain words. */
+const LAB_LABELS: Record<RxLanguage, { showAtLab: string; getDoneAt: string; navigate: string; openMap: string }> = {
+    en: {
+        showAtLab: "Show this at the lab",
+        getDoneAt: "Get these tests done at",
+        navigate: "Navigate to the lab",
+        openMap: "Opens Google Maps with the way there",
+    },
+    hi: {
+        showAtLab: "यह लैब में दिखाएँ",
+        getDoneAt: "ये जाँचें यहाँ करवाएँ",
+        navigate: "लैब का रास्ता देखें",
+        openMap: "Google Maps में रास्ता खुलेगा",
+    },
+    "hi-Latn": {
+        showAtLab: "Yeh lab mein dikhayein",
+        getDoneAt: "Ye jaanch yahan karwayein",
+        navigate: "Lab ka rasta dekhein",
+        openMap: "Google Maps mein rasta khulega",
+    },
+};
+
+/** Where the Navigate button goes: the doctor's own map link, else directions
+ *  to the lab's name and address. No Maps API either way. */
+function labMapHref(lab: { name: string; address: string | null; mapsUrl: string | null }): string | null {
+    if (lab.mapsUrl && /^https?:\/\//i.test(lab.mapsUrl)) return lab.mapsUrl;
+    if (lab.address) return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${lab.name}, ${lab.address}`)}`;
+    return null;
+}
 
 const BILLING_LABELS: Record<RxLanguage, {
     title: string; fee: string; medicine: string; discount: string; total: string;
@@ -565,11 +595,46 @@ export function PublicPrescriptionPage() {
 
                 {rx.tests.length ? (
                     <Section icon={ClipboardList} title={labels.investigations} bold={boldWeight} tone="purple">
-                        <ul className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
-                            {rx.tests.map((t, i) => (
-                                <li key={i} className="text-sm font-semibold text-slate-800">• {t}</li>
-                            ))}
-                        </ul>
+                        {/* Highlighted: this is the card a patient shows at the
+                            lab's counter, and the way to get there. */}
+                        <div className="overflow-hidden rounded-2xl border-2 border-purple-300 bg-gradient-to-b from-purple-50 to-white shadow-[0_6px_20px_-10px_rgba(126,34,206,0.45)]">
+                            <p className="flex items-center gap-1.5 border-b border-purple-200 bg-purple-100/70 px-4 py-2 text-[11px] font-black uppercase tracking-wide text-purple-800">
+                                <FlaskConical className="h-3.5 w-3.5" strokeWidth={2.5} /> {LAB_LABELS[language].showAtLab}
+                            </p>
+                            <ul className="space-y-2 px-4 py-3.5">
+                                {rx.tests.map((t, i) => (
+                                    <li key={i} className={`flex gap-2.5 text-[15px] ${boldWeight} leading-snug text-slate-900`}>
+                                        <span className="mt-[3px] grid h-5 w-5 shrink-0 place-items-center rounded-full bg-purple-600 text-[11px] font-black text-white">{i + 1}</span>
+                                        {dashText(t)}
+                                    </li>
+                                ))}
+                            </ul>
+                            {rx.lab && (() => {
+                                const href = labMapHref(rx.lab);
+                                return (
+                                    <div className="border-t border-purple-200 bg-white px-4 py-3.5">
+                                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{LAB_LABELS[language].getDoneAt}</p>
+                                        <p className={`mt-0.5 text-base ${boldWeight} text-slate-900`}>{rx.lab.name}</p>
+                                        {rx.lab.address && (
+                                            <p className="mt-0.5 flex items-start gap-1.5 text-sm font-medium text-slate-600">
+                                                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-purple-600" /> {rx.lab.address}
+                                            </p>
+                                        )}
+                                        {href && (
+                                            <a
+                                                href={href}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-[15px] ${boldWeight} text-white shadow-sm active:scale-[0.99]`}
+                                            >
+                                                <Navigation className="h-4 w-4" strokeWidth={2.5} /> {LAB_LABELS[language].navigate}
+                                            </a>
+                                        )}
+                                        {href && <p className="mt-1.5 text-center text-[11px] font-semibold text-slate-400">{LAB_LABELS[language].openMap}</p>}
+                                    </div>
+                                );
+                            })()}
+                        </div>
                     </Section>
                 ) : null}
 

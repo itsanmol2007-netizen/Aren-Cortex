@@ -128,7 +128,7 @@ serve(async (req) => {
         db.from("prescription_medicines")
           .select("medicine_id, composition_ids, dosage_mg, frequency, duration_days, route, instructions, is_sos, sort_order, quantity_dispensed, unit_price")
           .eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
-        db.from("diagnostic_orders").select("test_name").eq("prescription_id", rx.id),
+        db.from("diagnostic_orders").select("test_name, lab_name").eq("prescription_id", rx.id),
         db.from("visit_symptoms").select("symptom_id").eq("visit_id", rx.visit_id),
         db.from("visit_findings").select("finding_id").eq("visit_id", rx.visit_id),
         // The same figures ReviewModal's Billing rail and the printed
@@ -230,6 +230,22 @@ serve(async (req) => {
     }[]).map(exerciseLine);
     const results = ((resultRes.data ?? []) as { test_name: string; result_text: string }[])
       .map((r) => ({ name: r.test_name, text: r.result_text }));
+
+    // Where the tests are to be done, so the patient can get there: the lab
+    // the order names, as the doctor (or else the clinic) saved it, with
+    // its address and map link (2026-09-27). Null when no lab was chosen.
+    const labName = ((doRes.data ?? []) as { lab_name: string | null }[]).map((r) => r.lab_name).find(Boolean) ?? null;
+    let lab: { name: string; address: string | null; mapsUrl: string | null } | null = null;
+    if (labName) {
+      const [mine, clinic] = await Promise.all([
+        rx.assigned_doctor_id
+          ? db.from("doctor_preferred_labs").select("name, address, maps_url").eq("doctor_id", rx.assigned_doctor_id).eq("name", labName).limit(1).maybeSingle()
+          : Promise.resolve({ data: null }),
+        db.from("clinic_preferred_labs").select("name, address, maps_url").eq("hospital_id", rx.hospital_id).eq("name", labName).limit(1).maybeSingle(),
+      ]);
+      const row = (mine.data ?? clinic.data) as { name: string; address: string | null; maps_url: string | null } | null;
+      lab = { name: labName, address: row?.address ?? null, mapsUrl: row?.maps_url ?? null };
+    }
 
     const patient = patientRes.data as { name: string; age: number | null; gender: string | null } | null;
     const medName = new Map<number, string>(((medRes.data ?? []) as { id: number; name: string }[]).map((m) => [m.id, m.name]));
@@ -337,6 +353,7 @@ serve(async (req) => {
         unitPrice: pm.unit_price != null ? Number(pm.unit_price) : null,
       })),
       tests: ((doRes.data ?? []) as { test_name: string }[]).map((x) => x.test_name).filter(Boolean),
+      lab,
       // Doctor's own advice for THIS visit only — never the clinic's canned
       // standing advice (prescription_settings.default_advice). See
       // docs/prescription-render-spec.md's "Advice vs instructions": that

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import {
   X, Edit2, Printer, MessageCircle, CheckCircle, Loader2,
-  AlertCircle, IndianRupee, Plus, Check,
+  AlertCircle, IndianRupee, Plus, Check, FlaskConical,
 } from "lucide-react";
 import { freqLabelToSlot, freqSlotToLabel } from "../lib/db";
 import type { DBHospital, DBFinding } from "../lib/db";
@@ -61,6 +61,10 @@ interface ReviewModalProps {
    * all) needs no change.
    */
   onSendWhatsApp?: (language: RxLanguage, billing?: ReviewBillingResult) => void;
+  /** Opens "Send to lab". Shown only when the prescription has investigations. */
+  onSendToLab?: () => void;
+  /** the lab an order was sent to this visit, once it has been */
+  labSentTo?: string | null;
   // "review": the consult screen's edit/confirm flow (default, unchanged).
   // "print":  Print RX's read-only reprint surface — no Edit, no Save; the
   //           primary action is printing. One rendering pipeline, two doors.
@@ -225,7 +229,7 @@ function RxIcon() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ReviewModal({
-  onClose, onEdit, onSave, onSendWhatsApp,
+  onClose, onEdit, onSave, onSendWhatsApp, onSendToLab, labSentTo,
   patient, visitId, prescriptionRef,
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
@@ -1036,6 +1040,19 @@ export default function ReviewModal({
                   <Printer className="w-4 h-4" /> Print / PDF
                   <kbd className="hidden lg:inline rounded border border-gray-200 bg-gray-50 px-1 text-[10.5px] font-semibold not-italic leading-4 text-gray-500">Ctrl P</kbd>
                 </button>
+
+                {/* Optional and never automatic: only when there is
+                    something to order, and only when the doctor asks. */}
+                {onSendToLab && tests.length > 0 && (
+                  <button onClick={onSendToLab}
+                    title={labSentTo ? `Sent to ${labSentTo}. Open to send again.` : "Send the investigation order to a preferred lab on WhatsApp"}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[13px] font-semibold transition-colors ${labSentTo
+                      ? "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                      : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+                    {labSentTo ? <CheckCircle className="w-4 h-4" /> : <FlaskConical className="w-4 h-4" />}
+                    {labSentTo ? "Sent to lab" : "Send to lab"}
+                  </button>
+                )}
 
                 {onSendWhatsApp && (() => {
                   const label =

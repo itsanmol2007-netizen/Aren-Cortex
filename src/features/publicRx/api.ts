@@ -97,6 +97,8 @@ export interface PublicRxData {
     vitals: Record<string, unknown> | null;
     medicines: PublicRxMedicine[];
     tests: string[];
+    /** the lab the tests were ordered from, and how to get there (2026-09-27) */
+    lab?: { name: string; address: string | null; mapsUrl: string | null } | null;
     advice: string[];
     followUpDays: number | null;
     footerNote: string | null;
