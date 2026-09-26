@@ -75,9 +75,14 @@ export function visitGist(v: RealVisit): VisitGist {
     // ── Context ──────────────────────────────────────────────────────────
     const context: string[] = [];
     if (v.story_duration) context.push(v.story_duration);
-    const pain = (v.sitePain ?? [])[0];
+    const pains = v.sitePain ?? [];
+    const pain = pains[0];
     const vas = v.vitals && typeof v.vitals === "object" ? Number((v.vitals as Record<string, unknown>).painVas) : NaN;
-    if (pain) context.push(`pain ${pain.value}/10`);
+    // Two places hurt differently ("right knee 7/10, left knee 4/10"): each
+    // keeps its own score rather than one number standing for both.
+    if (pains.length > 1) {
+        context.push(pains.slice(0, 3).map((p) => `${p.site.toLowerCase()} ${p.value}/10`).join(", "));
+    } else if (pain) context.push(`pain ${pain.value}/10`);
     else if (Number.isFinite(vas) && vas > 0) context.push(`pain ${vas}/10`);
     if (v.story_mechanism) {
         const m = v.story_mechanism.trim();
