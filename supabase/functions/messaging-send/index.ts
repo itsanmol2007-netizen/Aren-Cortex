@@ -432,23 +432,40 @@ async function providerSend(m: OutMessage): Promise<{ providerMessageId: string;
   }
 
   const { name: templateName, language: templateLang } = resolveTemplate(m.purpose, m.language);
-  try {
-    const data = await callGraphApi({
-      messaging_product: "whatsapp",
-      to: m.to,
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: templateLang },
-        components: buildComponents(m),
-      },
-    });
-    return { providerMessageId: data.messages[0].id, name };
-  } catch (e) {
-    const err = new Error((e as Error).message) as Error & { providerDetail?: string };
-    err.providerDetail = (e as Error).message;
-    throw err;
+  // Meta files an "English" template under en, en_US or en_GB depending on
+  // what was picked when it was submitted, and a wrong code reads exactly
+  // like a missing template ("Template not found"). So an English send that
+  // is not found is retried under the other English codes before failing.
+  const langs = templateLang.startsWith("en")
+    ? [templateLang, ...["en", "en_US", "en_GB"].filter((c) => c !== templateLang)]
+    : [templateLang];
+  let last: Error | null = null;
+  for (const code of langs) {
+    try {
+      const data = await callGraphApi({
+        messaging_product: "whatsapp",
+        to: m.to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code },
+          components: buildComponents(m),
+        },
+      });
+      return { providerMessageId: data.messages[0].id, name };
+    } catch (e) {
+      last = e as Error;
+      if (!isTemplateMissing(last.message)) break;
+    }
   }
+  const detail = `${last?.message ?? "send failed"} [template ${templateName}, tried ${langs.join("/")}]`;
+  const err = new Error(detail) as Error & { providerDetail?: string };
+  err.providerDetail = detail;
+  throw err;
+}
+
+function isTemplateMissing(detail: string): boolean {
+  return /template (name )?(does not exist|not found)|132001/i.test(detail);
 }
 
 // ── Context load (ported from service.js loadContext) ─────────────────────
@@ -690,6 +707,12 @@ async function chargeAndSend(
     // support can read and action, and support-notify dispatches alerts via Amazon SES.
     console.error(`[messaging-send] send failed (message ${messageId}): ${detail}`);
 
+    if (isTemplateMissing(detail)) {
+      throw new MessagingError(
+        "This WhatsApp template isn't live yet (still in review, or saved under a different name). Your credit has been refunded.",
+        "template_missing",
+      );
+    }
     throw new MessagingError(
       "WhatsApp could not deliver this message. Your credit has been refunded.",
       "send_failed",
