@@ -226,7 +226,6 @@ export function SuggestionsCard({
     disabled = false, className = "",
     types, title = "Clinical Actions", capped, initialScope = null,
 }: Props) {
-    const [showAllCapped, setShowAllCapped] = useState(false);
     const reduce = useReducedMotion();
 
     /**
@@ -490,14 +489,11 @@ export function SuggestionsCard({
     // the caller passed `capped` — every instance does today. Lifted out of
     // `body()` (single source of truth) so the subheader's count and the
     // `motion.div` height below can both read it without recomputing.
-    const visibleRows = useMemo(
-        () => (
-            capped != null && !showAllCapped
-                ? rows.filter((r, i) => i < capped || isIntentTaken(r.intent))
-                : rows
-        ),
-        [rows, capped, showAllCapped, selectedTests, adviceLines, acceptedIntentIds]
-    );
+    // 2026-09-26 (Anmol): no "Show all" any more. The card sits at the very
+    // bottom of the page, where a toggle that grows it is the worst place to
+    // grow; like the medicine list, every row is there and the box scrolls
+    // on its own, with half a row showing past the edge to say so.
+    const visibleRows = rows;
 
     // Keyed on the rendered rows, so "Show all" cascades the newly revealed
     // ones in rather than having them appear mid-list unannounced.
@@ -828,7 +824,7 @@ export function SuggestionsCard({
                     </div>
                     {capped != null && rows.length > 0 && (
                         <span className="cs-ranked-count" title="Ranked — what confirms or rules out what you've ranked above.">
-                            {visibleRows.length} of {rows.length}
+                            {rows.length}
                         </span>
                     )}
                 </div>
@@ -876,7 +872,7 @@ export function SuggestionsCard({
                                 Ranked suggestions
                             </span>
                             <span className="cs-ranked-count">
-                                {visibleRows.length} of {rows.length}
+                                {rows.length}
                             </span>
                         </div>
                     )}
@@ -884,14 +880,14 @@ export function SuggestionsCard({
                         initial={false}
                         animate={
                             capped != null
-                                ? { maxHeight: showAllCapped ? Math.max(4.5, capped + 1.5) * ROW_H : capped * ROW_H }
+                                ? { maxHeight: rows.length > capped ? (capped + 0.5) * ROW_H : capped * ROW_H }
                                 : { maxHeight: "none" }
                         }
                         transition={
                             reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 32 }
                         }
                         className={
-                            "cs-list " + (capped != null && showAllCapped ? "is-list-expanded" : "is-list-collapsed")
+                            "cs-list " + (capped != null && rows.length > capped ? "is-list-expanded" : "is-list-collapsed")
                         }
                         ref={listRef}
                         layoutScroll
@@ -899,16 +895,7 @@ export function SuggestionsCard({
                     >
                         {body()}
                     </motion.div>
-                    {capped != null && rows.length > capped && (
-                        <button
-                            type="button"
-                            onClick={() => setShowAllCapped((v) => !v)}
-                            className="cs-card-foot-more cs-sug-cap-toggle"
-                        >
-                            {showAllCapped ? "Show less" : `Show all ${rows.length}`}
-                            <ChevronDown size={13} className={showAllCapped ? "is-flipped" : undefined} />
-                        </button>
-                    )}
+
                 </>
             )}
         </section>

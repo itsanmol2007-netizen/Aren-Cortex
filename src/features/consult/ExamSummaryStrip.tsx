@@ -52,6 +52,9 @@ interface Props {
     disabled?: boolean;
 }
 
+/** Site lines shown before "Show all" — two keeps the card one fixed height. */
+const MAX_LINES = 2;
+
 interface SiteLine {
     key: string;
     name: string;
@@ -129,8 +132,18 @@ export function ExamSummaryStrip({
                 </span>
 
                 <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--cs-label)]">
-                        Body map &amp; examination
+                    <span className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--cs-label)]">
+                            Body map &amp; examination
+                        </span>
+                        {/* Never taller than two sites: the rest are one
+                            click away in the map itself, so the row beside
+                            this card does not grow with it. */}
+                        {sites.length > MAX_LINES && (
+                            <span className="ml-auto rounded-full bg-[var(--cs-blue-soft)] px-2 py-[1px] text-[11px] font-bold text-[var(--cs-blue)]">
+                                +{sites.length - MAX_LINES} more · Show all
+                            </span>
+                        )}
                     </span>
 
                     {sites.length === 0 ? (
@@ -139,20 +152,20 @@ export function ExamSummaryStrip({
                         </span>
                     ) : (
                         <span className="flex flex-col gap-[3px]">
-                            {sites.map((site) => {
+                            {sites.slice(0, MAX_LINES).map((site) => {
                                 // A site with nothing recorded yet still shows,
                                 // because the map marking it IS a clinical
                                 // statement — this is the joint being treated.
                                 const rest = [...site.recorded, ...site.counts];
                                 return (
-                                    <span key={site.key} className="inline-flex min-w-0 items-center gap-2">
-                                        <b className="text-[13px] font-bold text-[var(--cs-ink)]">
+                                    <span key={site.key} className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+                                        <b className="flex-none text-[13px] font-bold text-[var(--cs-ink)]">
                                             {site.name}
                                         </b>
                                         {site.pain !== null && (
                                             <i
                                                 className={
-                                                    "rounded-[5px] px-[7px] py-[1px] text-[11px] font-bold not-italic tabular-nums " +
+                                                    "flex-none rounded-[5px] px-[7px] py-[1px] text-[11px] font-bold not-italic tabular-nums " +
                                                     // Amber at 7+, the same threshold `painVas` warned on,
                                                     // so the two surfaces cannot disagree about "severe".
                                                     (site.pain >= 7
@@ -164,11 +177,11 @@ export function ExamSummaryStrip({
                                             </i>
                                         )}
                                         {site.nv === "compromised" && (
-                                            <i className="rounded-[5px] bg-[var(--cs-red-soft)] px-[7px] py-[1px] text-[11px] font-bold not-italic text-[var(--cs-red)]">
+                                            <i className="flex-none rounded-[5px] bg-[var(--cs-red-soft)] px-[7px] py-[1px] text-[11px] font-bold not-italic text-[var(--cs-red)]">
                                                 NV compromised
                                             </i>
                                         )}
-                                        <em className="truncate text-[11.5px] font-medium not-italic text-[var(--cs-faint)]">
+                                        <em className="min-w-0 truncate text-[11.5px] font-medium not-italic text-[var(--cs-faint)]">
                                             {rest.length > 0 ? rest.join(" · ") : site.nv === "intact" ? "NV intact" : "nothing recorded yet"}
                                         </em>
                                     </span>
