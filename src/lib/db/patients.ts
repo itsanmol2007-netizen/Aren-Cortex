@@ -849,6 +849,8 @@ export interface VisitOrder {
     /** what it showed — null while the result is still awaited */
     resultText: string | null;
     resultAt: string | null;
+    /** the visit the result was read at — the current one keeps it editable */
+    resultVisitId?: string | null;
 }
 
 export interface VisitAssessment {
@@ -1061,7 +1063,7 @@ export async function hydratePatientVisits(
         safe(sitedObservationsByVisit(visitIds), new Map<string, { reported: string[]; found: string[] }>()),
         safe(supabase.from("visit_findings").select("visit_id, finding_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("prescriptions").select("id, visit_id, findings_text, advice_notes").in("visit_id", visitIds), { data: [] } as any),
-        safe(supabase.from("diagnostic_orders").select("id, visit_id, test_name, created_at, result_text, result_at").in("visit_id", visitIds), { data: [] } as any),
+        safe(supabase.from("diagnostic_orders").select("id, visit_id, test_name, created_at, result_text, result_at, result_visit_id").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_body_sites").select("visit_id, region, aspect, side").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_impairments").select("visit_id, label").in("visit_id", visitIds), { data: [] } as any),
         safe(supabase.from("visit_story").select("visit_id, duration_text, mechanism").in("visit_id", visitIds), { data: [] } as any),
@@ -1097,6 +1099,7 @@ export async function hydratePatientVisits(
                 orderedAt: r.created_at,
                 resultText: r.result_text ?? null,
                 resultAt: r.result_at ?? null,
+                resultVisitId: r.result_visit_id ?? null,
             });
         }
         ordersByVisit.set(r.visit_id, orders);

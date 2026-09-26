@@ -930,7 +930,14 @@ export function LongitudinalBand({
     // is the SAME story continuing, whatever the database calls it. The band
     // says so in its title and takes on its own accent, so the doctor knows
     // before reading a word that they are picking up a thread.
-    const followUp = gap !== null && gap <= 30 && ongoing.length > 0;
+    // Back within a month of a visit that was about something is a
+    // follow-up, whether or not anything is still open: an X-ray whose
+    // result has come in closes a thread, not the episode. (Keying this on
+    // open items alone dropped the band back to the plain summary the
+    // moment the result was saved.)
+    const lastHadSubstance = !!(lastVisit.assessments?.length || lastVisit.symptoms.length
+        || lastVisit.findings.length || lastVisit.diagnoses?.length || lastVisit.sitedFindings?.length);
+    const followUp = gap !== null && gap <= 30 && (ongoing.length > 0 || lastHadSubstance);
     const thread = ongoing.find((o) => o.kind === "condition");
     const episode = thread ? `${thread.title}${thread.site ? ` - ${thread.site}` : ""}` : visitGist(lastVisit).headline;
 
@@ -1107,7 +1114,7 @@ export function LongitudinalBand({
                         {/* A returning patient with nothing trendable yet. Rendered as a
                             deliberate, clean clinical placeholder card rather than an
                             unformatted floating line of text. */}
-                        {summary.series.length === 0 && ongoing.length === 0 && (
+                        {summary.series.length === 0 && ongoing.length === 0 && !followUp && (
                             <div className="cs-lt-card is-empty-trend">
                                 <div className="cs-lt-empty-trend-icon">
                                     <TrendingUp size={16} aria-hidden="true" />

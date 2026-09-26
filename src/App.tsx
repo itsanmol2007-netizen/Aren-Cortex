@@ -21,6 +21,7 @@ import { NV_CHECKS, NV_REGIONS, nvKey } from "./features/consult/NeurovascularCh
 import { dashText } from "./lib/clinicalText";
 import { recordInvestigationResult, recordStateEvent, STATUS_LABEL } from "./lib/db/clinicalState";
 import { ResultSheet, type ResultDraft } from "./features/consult/ResultSheet";
+import type { AssessmentLine } from "./features/consult/assessmentPlan";
 import { searchIntents } from "./lib/db/synapse";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientModal } from "./components/PatientModal";
@@ -148,6 +149,28 @@ import { SignInPortal } from "./features/auth/SignInPortal";
 // today — kept rather than deleted so the NEXT destination this sidebar
 // grows has somewhere to land on day one instead of a blank screen.
 const COMING_SOON_META: Record<string, { title: string; subtitle: string }> = {};
+
+/**
+ * What a saved result was made of, read back from its text when the sheet's
+ * own record of it is gone (the consult was reopened): the lines of today's
+ * assessment it names, "No abnormality detected", and the rest as its note.
+ */
+function draftFromResult(text: string | null, lines: AssessmentLine[], diagnoses: string[]): ResultDraft | undefined {
+  if (!text) return undefined;
+  const parts = text.split("; ").map((p) => p.trim()).filter(Boolean);
+  const linked: string[] = [];
+  const plain: string[] = [];
+  const rest: string[] = [];
+  let normal = false;
+  for (const p of parts) {
+    const line = lines.find((l) => l.text === p);
+    if (line) linked.push(line.id);
+    else if (p === "No abnormality detected") normal = true;
+    else if (diagnoses.includes(p)) plain.push(p);
+    else if (p !== "Report attached") rest.push(p);
+  }
+  return { linked, owned: [], plain, normal, note: rest.join("; "), attachmentIds: [] };
+}
 
 function App() {
   // ★ The shape of this clinic — does somebody else do intake here? Read
@@ -1867,6 +1890,26 @@ function App() {
     setResultSheetFor(null);
     setContinued(false);
   }, [patient?.id]);
+  // A result read at THIS visit and saved already (the consult was reopened,
+  // or the page reloaded) is still this visit's: it stays on the Ongoing
+  // card as recorded today, with Edit result, rather than vanishing because
+  // the order now reads as resulted.
+  useEffect(() => {
+    if (!visitId) return;
+    const mine: [string, string][] = [];
+    for (const v of meaningfulPastVisits) {
+      for (const o of v.orders ?? []) {
+        if (o.resultText && o.resultVisitId === visitId) mine.push([o.id, o.resultText]);
+      }
+    }
+    if (!mine.length) return;
+    setResultsToday((cur) => {
+      if (mine.every(([id]) => cur.has(id))) return cur;
+      const next = new Map(cur);
+      for (const [id, text] of mine) if (!next.has(id)) next.set(id, text);
+      return next;
+    });
+  }, [meaningfulPastVisits, visitId]);
   const ongoingLocal = useMemo<OngoingLocal>(() => ({
     ...ongoingStates,
     results: resultsToday,
@@ -3142,7 +3185,9 @@ function App() {
               visitId={visitId}
               hospitalId={identity.isReal ? identity.hospitalId : null}
               patientId={patient?.id ?? null}
-              initial={resultDrafts.get(resultSheetFor.order.id)}
+              initial={resultDrafts.get(resultSheetFor.order.id) ?? draftFromResult(
+                resultsToday.get(resultSheetFor.order.id) ?? null, assessmentLines, diagnoses,
+              )}
               editing={resultsToday.has(resultSheetFor.order.id)}
               onSave={(text, draft) => {
                 const orderId = resultSheetFor.order!.id;

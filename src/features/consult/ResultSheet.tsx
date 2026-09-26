@@ -181,8 +181,10 @@ export function ResultSheet({
     const arrived = attachments
         .filter((a) => new Date(a.createdAt).getTime() >= openedAt.current - 2000)
         .map((a) => a.id);
+    // Also anything uploaded for this order before (a computer upload is
+    // labelled with the order's name), so a reopened result still shows it.
     const resultAttachments = attachments.filter(
-        (a) => (mine.includes(a.id) || arrived.includes(a.id)) && !dropped.includes(a.id),
+        (a) => (mine.includes(a.id) || arrived.includes(a.id) || a.label === order.name) && !dropped.includes(a.id),
     );
     const canPhone = !!visitId && !!hospitalId && !!patientId;
 
