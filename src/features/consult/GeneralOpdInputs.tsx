@@ -26,6 +26,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ClinicalCommandBar, CaseSheet, type CaseSheetEntry } from "./CaseSheet";
+import { addStoryNote, removeStoryNote, storyNotes, type Story } from "./story";
 import { durationCandidates } from "./duration";
 import { MeasurementsCard } from "./MeasurementsCard";
 import { AttachmentsCard } from "./AttachmentsCard";
@@ -86,6 +87,11 @@ interface Props {
     searchRef?: React.RefObject<HTMLInputElement>;
     /** the workspace's Measurements Tab stop — see App.tsx and useConsultKeyboard.ts */
     measurementsRef?: React.RefObject<HTMLElement | null>;
+    /** The visit's story, for free text typed into the bar ("fell from bike
+     *  yesterday"). Only its note is used here; the structured Story stays
+     *  physiotherapy's. Absent: the bar offers no note row. */
+    story?: Story;
+    onStoryChange?: (s: Story) => void;
     /** this doctor's prescription templates — see ClinicalCommandBar's own doc comment */
     templates?: PrescriptionTemplateSummary[];
     onApplyTemplate?: (templateId: number) => void;
@@ -100,7 +106,7 @@ export function GeneralOpdInputs({
     vitals, onVitalsChange, defaultMeasureKeys, relevantMeasureKeys, relevantMeasureBecause,
     pastVisits,
     visitId, hospitalId, patientId, disabled = false, searchRef, measurementsRef,
-    templates, onApplyTemplate,
+    templates, onApplyTemplate, story, onStoryChange,
 }: Props) {
     /**
      * ── Reaching "Related" without a mouse ───────────────────────────────
@@ -182,6 +188,7 @@ export function GeneralOpdInputs({
                 durationCandidates={pendingDurations}
                 durationsByLabel={symptomDurations}
                 onDurationAnswer={onSetSymptomDuration}
+                onStoryNote={story && onStoryChange ? (text) => onStoryChange(addStoryNote(story, text)) : undefined}
             />
 
             {/* One box in place of three (History, Symptoms, Findings): the Case
@@ -209,6 +216,8 @@ export function GeneralOpdInputs({
                     onBrowse={onBrowseFinding}
                     disabled={disabled}
                     relatedRef={relatedRef}
+                    storyNotes={story ? storyNotes(story) : []}
+                    onStoryNoteRemove={story && onStoryChange ? (i) => onStoryChange(removeStoryNote(story, i)) : undefined}
                     onFocusSearch={() => searchRef?.current?.focus()}
                 />
 

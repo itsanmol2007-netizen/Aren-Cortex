@@ -92,6 +92,43 @@ export function isStoryEmpty(s: Story): boolean {
         && !s.tolerance.trim() && !s.note.trim();
 }
 
+// ── Free-text story, typed straight into the command bar ────────────────────
+//
+// "Fell from bike yesterday" is a story, but no vocabulary item says it. The
+// bar offers any sentence it cannot place as a note (see ClinicalCommandBar's
+// "note" row); each lands on `story.note`, one per line, the column that was
+// always there as the story's last resort. Record-only: nothing ranks on it.
+
+/** The story's free-text notes, one per line. */
+export function storyNotes(s: Story): string[] {
+    return s.note.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/** Adds one note (sentence-cased), unless the same words are already there. */
+export function addStoryNote(s: Story, text: string): Story {
+    const t = text.trim().replace(/\s+/g, " ");
+    if (!t) return s;
+    const line = t.charAt(0).toUpperCase() + t.slice(1);
+    const notes = storyNotes(s);
+    if (notes.some((n) => n.toLowerCase() === line.toLowerCase())) return s;
+    return { ...s, note: [...notes, line].join("\n") };
+}
+
+export function removeStoryNote(s: Story, index: number): Story {
+    return { ...s, note: storyNotes(s).filter((_, i) => i !== index).join("\n") };
+}
+
+/**
+ * Whether a typed query reads as narrative rather than a search: three or
+ * more words, or two with at least eight letters between them. A single
+ * word ("swelling") is always a search.
+ */
+export function looksLikeNote(query: string): boolean {
+    const words = query.trim().split(/\s+/).filter(Boolean);
+    if (words.length >= 3) return true;
+    return words.length === 2 && words.join("").length >= 8;
+}
+
 // ── Small closed vocabularies, rendered as chip rows ────────────────────────
 
 export const DURATION_LABEL: Record<StoryDuration, string> = {

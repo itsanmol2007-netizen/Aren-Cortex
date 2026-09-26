@@ -47,12 +47,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, ClipboardList, MapPin, Plus, Search, X } from "lucide-react";
+import { Check, ClipboardList, MapPin, PenLine, Plus, Search, X } from "lucide-react";
 import type { Observable, PrescriptionTemplateSummary } from "../../lib/db/synapse";
 import type { SelectedSymptom } from "../../types";
 import {
     searchStory, storyClauses, openStoryDimensions, itemsForDimension,
-    storyHas, DIMENSION_PROMPT,
+    storyHas, DIMENSION_PROMPT, looksLikeNote,
 } from "./story";
 import type { Story, StorySearchItem, StoryDimension } from "./story";
 import { clinicalSiteLabel, sameSite, type SiteRef } from "../../lib/body/clinicalSite";
@@ -358,7 +358,9 @@ type BarResult =
      *  other three already established — see `durationCandidates`. */
     | { t: "duration"; key: string; complaint: string; choice: DurationChoice }
     /** Where the local finding just added was found — the where-slot. */
-    | { t: "site"; key: string; finding: string; hit: SiteHit };
+    | { t: "site"; key: string; finding: string; hit: SiteHit }
+    /** Anything typed as a sentence, kept word for word on the story. */
+    | { t: "note"; key: string; text: string };
 
 interface BarProps {
     observables: Observable[];
@@ -451,6 +453,16 @@ interface BarProps {
      */
     siteKnown?: SiteRef[];
     onSiteChange?: (finding: string, site: SiteRef, on: boolean) => void;
+    /**
+     * ── FREE-TEXT STORY (2026-09-27) ──────────────────────────────────────
+     *
+     * "Fell from bike yesterday" has no chip. Anything typed as a sentence is
+     * offered as a note on the visit's story, word for word (`looksLikeNote`
+     * decides what reads as a sentence). It leads the list when nothing in
+     * the vocabularies starts with what was typed, and trails it otherwise,
+     * so a catalogue search is never pre-empted. Absent: no note row.
+     */
+    onStoryNote?: (text: string) => void;
 }
 
 /**
@@ -462,7 +474,7 @@ export function ClinicalCommandBar({
     disabled = false, searchRef, onEmptyDown, onEmptyUp, onEmptyEnter,
     templates, onApplyTemplate,
     durationCandidates, durationsByLabel, onDurationAnswer, preferSystems, preferDomain,
-    siteKnown, onSiteChange,
+    siteKnown, onSiteChange, onStoryNote,
 }: BarProps) {
     const [query, setQuery] = useState("");
     const [active, setActive] = useState(0);
@@ -799,7 +811,7 @@ export function ClinicalCommandBar({
         }));
     }, [siteSlot, query, siteKnown, implied]);
 
-    const results = useMemo<BarResult[]>(() => {
+    const searchResults = useMemo<BarResult[]>(() => {
         const obs: BarResult[] = obsResults.map((o) => ({ t: "obs", key: `o:${o.id}`, o }));
         if (!storyOn) return [...siteMatches, ...durationMatches, ...templateMatches, ...obs];
         const st = searchStory(query, story!, 6);
@@ -828,6 +840,31 @@ export function ClinicalCommandBar({
             .map((it) => ({ t: "story", key: `s:${it.id}`, it }));
         return [...siteMatches, ...templateMatches, ...lead, ...obs, ...rest];
     }, [obsResults, storyOn, query, story, slot, templateMatches, durationMatches, siteMatches]);
+
+    /**
+     * The typed sentence itself, as a story note. Leads when nothing offered
+     * begins with what was typed (so "fell from bike yesterday" + Enter keeps
+     * it), trails otherwise (so "knee pain" + Enter still takes the chip).
+     */
+    const results = useMemo<BarResult[]>(() => {
+        const q = query.trim();
+        if (!onStoryNote || !looksLikeNote(q)) return searchResults;
+        const note: BarResult = { t: "note", key: `n:${q.toLowerCase()}`, text: q };
+        const lower = q.toLowerCase();
+        const labelOf = (r: BarResult) => r.t === "obs" ? r.o.label
+            : r.t === "template" ? r.tpl.name
+                : r.t === "duration" ? r.choice.label
+                    : r.t === "site" ? r.hit.label
+                        : r.t === "story" ? r.it.label : "";
+        // ...or when a parsed answer opens the sentence ("10 days back" is the
+        // duration "10 days", not a note).
+        const parsed = (r: BarResult) => r.t === "duration" || r.t === "site" || (r.t === "story" && r.it.dimension === "Duration");
+        const startsWith = searchResults.some((r) => {
+            const l = labelOf(r).toLowerCase();
+            return l.startsWith(lower) || (parsed(r) && !!l && lower.startsWith(l));
+        });
+        return startsWith ? [...searchResults, note] : [note, ...searchResults];
+    }, [searchResults, query, onStoryNote]);
 
     /** Empty + focused: the current slot's options, never a permanent row. */
     const prompts = useMemo<BarResult[]>(() => {
@@ -926,6 +963,7 @@ export function ClinicalCommandBar({
             if (ask) setSiteAsk(r.o.label);
         }
         else if (r.t === "template") onApplyTemplate?.(r.tpl.id);
+        else if (r.t === "note") onStoryNote?.(r.text);
         else if (r.t === "duration") {
             onDurationAnswer?.(r.complaint, r.choice.days);
             setHistory((h) => [...h, { kind: "duration", label: r.complaint }]);
@@ -1059,7 +1097,8 @@ export function ClinicalCommandBar({
                             : r.t === "template" ? r.tpl.name
                                 : r.t === "duration" ? r.choice.label
                                     : r.t === "site" ? r.hit.label
-                                        : r.it.label;
+                                        : r.t === "note" ? r.text
+                                            : r.it.label;
                         return (
                             <button
                                 key={r.key}
@@ -1111,15 +1150,22 @@ export function ClinicalCommandBar({
                                         : r.t === "template" ? "bg-[#faf8ff] " : "") +
                                     (r.t === "template" ? "border-l-2 border-l-[var(--cs-violet)] " : "") +
                                     (r.t === "duration" ? "border-l-2 border-l-[var(--cs-blue)] " : "") +
-                                    (r.t === "site" ? "border-l-2 border-l-[var(--cs-teal)] " : "")
+                                    (r.t === "site" ? "border-l-2 border-l-[var(--cs-teal)] " : "") +
+                                    (r.t === "note" ? "border-l-2 border-l-[#a855f7] " : "")
                                 }
                             >
                                 {r.t === "site" && (
                                     <MapPin size={13} aria-hidden="true" className="flex-none text-[var(--cs-teal)]" />
                                 )}
+                                {r.t === "note" && (
+                                    <PenLine size={13} aria-hidden="true" className="flex-none text-[#9333ea]" />
+                                )}
                                 <span className={"min-w-0 flex-1 truncate" + (r.t === "site" ? " font-semibold" : "")}>
                                     {on && <span aria-hidden="true">✓ </span>}
-                                    {label}
+                                    {r.t === "note" && (
+                                        <span className="mr-1 text-[12px] font-semibold text-[#7e22ce]">Add to story</span>
+                                    )}
+                                    {r.t === "note" ? <span className="text-[var(--cs-ink)]">“{label}”</span> : label}
                                     {r.t === "template" && (
                                         <span className="ml-1.5 text-[11px] font-normal text-[var(--cs-faint)]">
                                             {r.tpl.itemCount} item{r.tpl.itemCount === 1 ? "" : "s"}
@@ -1155,14 +1201,16 @@ export function ClinicalCommandBar({
                                         (r.t === "obs" ? TONE[r.o.kind].badge
                                             : r.t === "template" ? "bg-[var(--cs-violet-soft)] text-[var(--cs-violet)]"
                                                 : r.t === "site" ? "bg-[#dbf4eb] text-[#0b6a62]"
-                                                    : "bg-[#eaf0fb] text-[#2c4a7c]")
+                                                    : r.t === "note" ? "bg-[#f3e8ff] text-[#7e22ce]"
+                                                        : "bg-[#eaf0fb] text-[#2c4a7c]")
                                     }
                                 >
                                     {r.t === "obs" ? KIND_BADGE[r.o.kind]
                                         : r.t === "template" ? "Template"
                                             : r.t === "duration" ? "duration"
                                                 : r.t === "site" ? "where"
-                                                    : r.it.dimension.toLowerCase()}
+                                                    : r.t === "note" ? "story"
+                                                        : r.it.dimension.toLowerCase()}
                                 </span>
                             </button>
                         );
@@ -1255,7 +1303,7 @@ export function ClinicalCommandBar({
                         placeholder={
                             siteSlot ? `Where is it? Type a place, e.g. kn or lower back. Space to skip`
                             : durationSlot ? `How long — ${durationSlot.toLowerCase()}? Type a number, or Space to skip`
-                                : !storyOn ? "Add clinical information (symptoms, findings, history…)"
+                                : !storyOn ? (onStoryNote ? "Add symptoms, findings, history, or type what happened…" : "Add clinical information (symptoms, findings, history…)")
                                 : !leadComplaint ? "What happened? Start with the complaint…"
                                     // A slot names the question in the pill beside the
                                     // caret, so a placeholder would only repeat it.
@@ -1924,6 +1972,10 @@ interface SheetProps {
     /** the story itself, for the sentence — see the Story row */
     story?: Story;
     onStoryRemove?: (it: StorySearchItem) => void;
+    /** free-text story typed into the bar ("Fell from bike yesterday"), one
+     *  sentence each, closing the Story row; see BarProps.onStoryNote */
+    storyNotes?: string[];
+    onStoryNoteRemove?: (index: number) => void;
     /**
      * Lands focus in the command bar's search input — the empty sheet's own
      * "+" (2026-08-28). `ClinicalCommandBar` and `CaseSheet` are siblings on
@@ -1938,7 +1990,7 @@ interface SheetProps {
 export function CaseSheet({
     entries, onRemove, onRetireCarried, onToggle, intensities, onIntensityChange,
     related, onBrowse, disabled = false, relatedRef,
-    storyChips = [], story: storyOf, onStoryRemove, onFocusSearch,
+    storyChips = [], story: storyOf, onStoryRemove, storyNotes = [], onStoryNoteRemove, onFocusSearch,
     detailWorthyLabels, onSetOnsetNote, autoOpenOnsetLabel, onAutoOpenOnsetHandled,
     knownSites = [], onSetFindingSites, autoOpenSiteLabel, onAutoOpenSiteHandled,
 }: SheetProps) {
@@ -2043,15 +2095,15 @@ export function CaseSheet({
                     Case Sheet
                 </h2>
                 <AnimatePresence>
-                    {entries.length + storyChips.length > 0 && (
+                    {entries.length + storyChips.length + storyNotes.length > 0 && (
                         <motion.span
-                            key={entries.length + storyChips.length}
+                            key={entries.length + storyChips.length + storyNotes.length}
                             initial={reduce ? false : { opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={popEase}
                             className="ml-auto flex-none rounded-[7px] bg-[var(--cs-blue-soft)] px-2 py-[3px] text-[12.5px] font-semibold text-[var(--cs-blue)]"
                         >
-                            {entries.length + storyChips.length} recorded
+                            {entries.length + storyChips.length + storyNotes.length} recorded
                         </motion.span>
                     )}
                 </AnimatePresence>
@@ -2062,7 +2114,7 @@ export function CaseSheet({
                 the card "showed its shape", which only produced three rows of
                 grey saying nothing. Nothing has been recorded, so the card
                 should look like nothing has been recorded. */}
-            {entries.length === 0 && storyChips.length === 0 && (
+            {entries.length === 0 && storyChips.length === 0 && storyNotes.length === 0 && (
                 <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-4 text-center">
                     {/* The drawing stays exactly as it was — only a small "+"
                         rides its corner now (2026-08-28), a real affordance
@@ -2123,7 +2175,7 @@ export function CaseSheet({
                 individually removable — hover reveals its ×, and the clause
                 greys under the cursor so it is obvious what is about to go —
                 but removal is the secondary act here. Reading is the point. */}
-            {storyChips.length > 0 && (
+            {storyChips.length + storyNotes.length > 0 && (
                 <div className="mt-2 flex items-start gap-2.5 px-4 py-[3px]">
                     <span className="w-[9.5em] flex-none whitespace-nowrap pt-[3px] text-[10.5px] font-bold uppercase leading-tight tracking-[0.085em] text-[var(--cs-label)]">
                         Story
@@ -2134,7 +2186,7 @@ export function CaseSheet({
                         instead of wrapping. `break-words` covers the one case
                         min-w-0 cannot — a single clause longer than the column. */}
                     <p className="m-0 min-w-0 flex-1 break-words text-[13.5px] font-medium leading-[1.6] text-[var(--cs-ink)]">
-                        {leadComplaint && (
+                        {leadComplaint && storyClauseList.length > 0 && (
                             <span className="font-bold">{leadComplaint}</span>
                         )}
                         {storyClauseList.map((c, i) => (
@@ -2159,6 +2211,28 @@ export function CaseSheet({
                                     aria-label={`Remove ${c.item.label}`}
                                     disabled={disabled}
                                     onClick={() => onStoryRemove?.(c.item)}
+                                    className="ml-[2px] hidden align-middle text-[var(--cs-faint)] hover:text-[var(--cs-rose)] focus-visible:inline group-hover/clause:inline"
+                                >
+                                    <X size={11} className="inline" />
+                                </button>
+                            </span>
+                        ))}
+                        {/* Free text typed into the bar, each its own
+                            sentence after the structured clauses, removable
+                            the same way. */}
+                        {storyClauseList.length > 0 && storyNotes.length > 0 && (
+                            <span className="mr-[1px] text-[var(--cs-faint)]">.</span>
+                        )}
+                        {storyNotes.map((n, i) => (
+                            <span key={`note-${i}`} className={"group/clause" + (i > 0 ? " ml-[3px]" : "")}>
+                                <span className="rounded-[4px] px-[2px] transition-colors group-hover/clause:bg-[var(--cs-rose-soft)] group-hover/clause:text-[var(--cs-rose)]">
+                                    {/[.!?]$/.test(n) ? n : `${n}.`}
+                                </span>
+                                <button
+                                    type="button"
+                                    aria-label={`Remove "${n}"`}
+                                    disabled={disabled}
+                                    onClick={() => onStoryNoteRemove?.(i)}
                                     className="ml-[2px] hidden align-middle text-[var(--cs-faint)] hover:text-[var(--cs-rose)] focus-visible:inline group-hover/clause:inline"
                                 >
                                     <X size={11} className="inline" />

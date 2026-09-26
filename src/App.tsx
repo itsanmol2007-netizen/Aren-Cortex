@@ -63,7 +63,7 @@ import { REGION_BY_KEY } from "./features/consult/examination";
 import { listBodySites } from "./lib/db/bodySites";
 import {
   DURATION_LABEL, ONSET_LABEL, IRRITABILITY_LABEL, SETTLING_LABEL,
-  AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS,
+  AGGRAVATING_FACTORS, EASING_FACTORS, STORY_PATTERNS, storyNotes,
 } from "./features/consult/story";
 import { type PickerKind } from "./features/consult/PickerCard";
 import { BrowseSheet } from "./features/consult/BrowseSheet";
@@ -1069,7 +1069,7 @@ function App() {
     if (s.tolerance.trim()) lines.push(`Tolerance: ${s.tolerance.trim()}`);
     if (s.irritability) lines.push(`Irritability: ${IRRITABILITY_LABEL[s.irritability]}`);
     if (s.settling) lines.push(`Settles: ${SETTLING_LABEL[s.settling]}`);
-    if (s.note.trim()) lines.push(s.note.trim());
+    lines.push(...storyNotes(s));
     return lines;
   }, [visitStory.story]);
 
@@ -2101,7 +2101,10 @@ function App() {
     const how = s.mechanism.trim();
     const when = s.durationText?.trim() || (s.duration ? DURATION_LABEL[s.duration] : "");
     const mech = how ? `${how}${when ? `, ${when} ago` : ""}` : "";
-    return [mech, ...diagnoses].filter(Boolean).join("; ");
+    // Free story typed into the bar ("Fell from bike yesterday") says how it
+    // happened when the structured mechanism does not; otherwise it is context.
+    const notes = storyNotes(s).join(", ");
+    return [mech || notes, ...diagnoses].filter(Boolean).join("; ");
   }, [visitStory.story, diagnoses]);
 
   const printNeuro = useMemo(() => {
@@ -2124,13 +2127,15 @@ function App() {
 
   const labContext = useMemo(() => {
     const pain = Number((vitals as Record<string, unknown> | null)?.painVas);
+    const s = visitStory.story;
     return [
+      ...(s.mechanism.trim() ? storyNotes(s) : []),
       ...chart.symptomsForRecord,
       ...chart.findingsForRecord,
       ...(Number.isFinite(pain) && pain > 0 ? [`Pain ${pain}/10`] : []),
       ...printNeuro.filter((n) => n.abnormal).map((n) => n.text),
     ].join("; ");
-  }, [chart.symptomsForRecord, chart.findingsForRecord, vitals, printNeuro]);
+  }, [visitStory.story, chart.symptomsForRecord, chart.findingsForRecord, vitals, printNeuro]);
 
 
 
@@ -2718,6 +2723,8 @@ function App() {
                   disabled={!patient}
                   searchRef={chartSearchRef}
                   measurementsRef={measurementsRef}
+                  story={visitStory.story}
+                  onStoryChange={visitStory.setStory}
                   templates={templates}
                   onApplyTemplate={applyTemplate}
                 />

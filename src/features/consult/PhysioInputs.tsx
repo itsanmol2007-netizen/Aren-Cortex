@@ -49,7 +49,7 @@ import { AttachmentsCard } from "./AttachmentsCard";
 import { GoalsCard } from "./GoalsCard";
 import { ExamSummaryStrip } from "./ExamSummaryStrip";
 import { useRovingList } from "../../hooks/useRovingList";
-import { addToStory, removeFromStory, selectedStoryItems } from "./story";
+import { addStoryNote, addToStory, removeFromStory, removeStoryNote, selectedStoryItems, storyNotes } from "./story";
 import type { SiteRef } from "../../lib/body/clinicalSite";
 import type { Observable } from "../../lib/db/synapse";
 import type { MeasureFieldKey } from "./measures";
@@ -161,6 +161,7 @@ export function PhysioInputs({
                 story={story}
                 onStoryAdd={(it) => onStoryChange(addToStory(story, it))}
                 onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
+                onStoryNote={(text) => onStoryChange(addStoryNote(story, text))}
                 leadComplaint={leadComplaint}
                 siteKnown={knownSites}
                 onSiteChange={onSiteChange}
@@ -190,6 +191,8 @@ export function PhysioInputs({
                     storyChips={storyChips}
                     story={story}
                     onStoryRemove={(it) => onStoryChange(removeFromStory(story, it))}
+                    storyNotes={storyNotes(story)}
+                    onStoryNoteRemove={(i) => onStoryChange(removeStoryNote(story, i))}
                     onFocusSearch={() => searchRef?.current?.focus()}
                 />
 
