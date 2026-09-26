@@ -48,6 +48,40 @@ function admin() {
   );
 }
 
+// ── Place names, as the consult prints them (src/lib/body/clinicalSite.ts)
+const SITE_NAMES: Record<string, [string, string]> = {
+  head_top: ["Head", "Head"], head_bottom: ["Face", "Occiput"], neck: ["Neck", "Cervical spine"],
+  torso_upper: ["Chest", "Thoracic spine"], torso_lower: ["Abdomen", "Lumbar spine"], pelvis: ["Pelvis", "Buttock"],
+  shoulder: ["Shoulder", "Shoulder"], upper_arm: ["Upper arm", "Upper arm"], elbow: ["Elbow", "Elbow"],
+  forearm: ["Forearm", "Forearm"], wrist: ["Wrist", "Wrist"], hand: ["Hand", "Hand"], hip: ["Hip", "Hip"],
+  thigh: ["Thigh", "Thigh"], knee: ["Knee", "Knee"], lower_leg: ["Lower leg", "Lower leg"],
+  ankle: ["Ankle", "Ankle"], foot: ["Foot", "Foot"],
+};
+function siteLabel(region: string, side: string | null, aspect: string): string {
+  const names = SITE_NAMES[region];
+  if (!names) return region;
+  const base = names[aspect === "back" ? 1 : 0];
+  const midline = (region === "neck" && aspect === "back")
+    || (aspect === "back" && (region === "torso_upper" || region === "torso_lower"));
+  if (!side || midline) return base;
+  if (side === "both") return `Bilateral ${base.toLowerCase()}`;
+  return `${side === "left" ? "Left" : "Right"} ${base.toLowerCase()}`;
+}
+
+/** "Quadriceps sets (right) - 3 x 10 · once a day": the print's exercise line, in brief. */
+function exerciseLine(e: {
+  label: string; sets: number | null; reps: number | null; hold_seconds: number | null;
+  per_day: number | null; side: string | null; notes: string | null;
+}): string {
+  const side = e.side === "left" ? "left" : e.side === "right" ? "right" : e.side === "both" ? "both sides" : null;
+  const head = side ? `${e.label} (${side})` : e.label;
+  const dose = e.sets && e.reps ? `${e.sets} x ${e.reps}` : e.sets && e.hold_seconds ? `${e.sets} x ${e.hold_seconds}s hold` : "";
+  const hold = e.reps && e.hold_seconds ? `hold ${e.hold_seconds}s` : "";
+  const often = e.per_day ? (e.per_day === 1 ? "once a day" : `${e.per_day} times a day`) : "";
+  const tail = [dose, hold, often, (e.notes ?? "").trim()].filter(Boolean).join(" · ");
+  return tail ? `${head} - ${tail}` : head;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "bad_request" }, 405);
@@ -76,7 +110,8 @@ serve(async (req) => {
       .maybeSingle();
     if (!rx) return json({ ok: false, error: "not_found" }, 404);
 
-    const [visitRes, doctorRes, hospitalRes, settingsRes, pmRes, doRes, vsRes, vfRes, paymentRes] =
+    const [visitRes, doctorRes, hospitalRes, settingsRes, pmRes, doRes, vsRes, vfRes, paymentRes,
+      obsRes, obsSiteRes, dxRes, ivRes, exRes, resultRes] =
       await Promise.all([
         db.from("visits").select("patient_id, vitals, prescription_ref").eq("id", rx.visit_id).maybeSingle(),
         rx.assigned_doctor_id
@@ -108,6 +143,18 @@ serve(async (req) => {
         db.from("visit_payments")
           .select("fee, discount, gst_amount, medicine_total, medicine_gst_amount, additional_charges, review_discount_percent, review_discount_amount, total")
           .eq("visit_id", rx.visit_id).maybeSingle(),
+        // 2026-09-26 — what the consult has recorded since the chart moved
+        // to observables, sites, structured assessments and procedures.
+        // The two tables above are the older chart's and are empty for a
+        // visit charted since; without these the page showed no complaints,
+        // no findings and none of the orthopaedic record at all.
+        db.from("visit_observations").select("observable_id").eq("visit_id", rx.visit_id),
+        db.from("visit_observation_sites").select("observable_id, region, side, aspect").eq("visit_id", rx.visit_id),
+        db.from("prescription_assessments").select("text, sort_order").eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
+        db.from("prescription_interventions").select("text, label, status, due_date, sort_order").eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
+        db.from("prescription_exercises").select("label, sets, reps, hold_seconds, per_day, side, notes, sort_order").eq("prescription_id", rx.id).order("sort_order", { ascending: true }),
+        // Results of earlier investigations, read at THIS visit.
+        db.from("diagnostic_orders").select("test_name, result_text").eq("result_visit_id", rx.visit_id).not("result_text", "is", null),
       ]);
 
     const visit = visitRes.data;
@@ -139,13 +186,50 @@ serve(async (req) => {
     const symptomIds = [...new Set(((vsRes.data ?? []) as { symptom_id: number }[]).map((r) => Number(r.symptom_id)))];
     const findingIds = [...new Set(((vfRes.data ?? []) as { finding_id: number }[]).map((r) => Number(r.finding_id)))];
 
-    const [patientRes, medRes, compRes, sympRes, findRes] = await Promise.all([
+    const obsIds = [...new Set(((obsRes.data ?? []) as { observable_id: number }[]).map((r) => Number(r.observable_id)))];
+    const [patientRes, medRes, compRes, sympRes, findRes, obsLabelRes] = await Promise.all([
       db.from("patients").select("name, age, gender").eq("id", visit.patient_id).maybeSingle(),
       medIds.length ? db.from("medicines").select("id, name").in("id", medIds) : Promise.resolve({ data: [] }),
       compIds.length ? db.from("compositions").select("id, name").in("id", compIds) : Promise.resolve({ data: [] }),
       symptomIds.length ? db.from("symptoms").select("id, name").in("id", symptomIds) : Promise.resolve({ data: [] }),
       findingIds.length ? db.from("findings").select("id, name").in("id", findingIds) : Promise.resolve({ data: [] }),
+      obsIds.length ? db.from("observables").select("id, label, kind").in("id", obsIds) : Promise.resolve({ data: [] }),
     ]);
+
+    // Complaints and findings from the observables chart, each with its
+    // place ("Joint swelling / effusion - Left wrist"), in the words the
+    // consult itself printed. The older chart's lists are the fallback.
+    const obsRows = (obsLabelRes.data ?? []) as { id: number; label: string; kind: string }[];
+    const sitesOf = new Map<number, string[]>();
+    for (const r of (obsSiteRes.data ?? []) as { observable_id: number; region: string; side: string | null; aspect: string }[]) {
+      const list = sitesOf.get(Number(r.observable_id)) ?? [];
+      list.push(siteLabel(r.region, r.side, r.aspect));
+      sitesOf.set(Number(r.observable_id), list);
+    }
+    const obsLines = (kind: string) => obsRows
+      .filter((o) => o.kind === kind)
+      .flatMap((o) => {
+        const at = sitesOf.get(o.id) ?? [];
+        return at.length ? at.map((site) => `${o.label} - ${site}`) : [o.label];
+      });
+    const oldSymptoms = ((sympRes.data ?? []) as { name: string }[]).map((x) => x.name).filter(Boolean);
+    const oldFindings = ((findRes.data ?? []) as { name: string }[]).map((x) => x.name).filter(Boolean);
+    const symptoms = [...new Set([...obsLines("symptom"), ...oldSymptoms])];
+    const findings = [...new Set([...obsLines("finding"), ...oldFindings])];
+
+    const assessments = ((dxRes.data ?? []) as { text: string | null }[]).map((r) => r.text ?? "").filter(Boolean);
+    const procedures = ((ivRes.data ?? []) as { text: string | null; label: string; status: string | null; due_date: string | null }[])
+      .map((r) => ({
+        text: r.text || r.label,
+        status: r.status === "planned" ? "planned" : "performed",
+        due: r.due_date ?? null,
+      }));
+    const exercises = ((exRes.data ?? []) as {
+      label: string; sets: number | null; reps: number | null; hold_seconds: number | null;
+      per_day: number | null; side: string | null; notes: string | null;
+    }[]).map(exerciseLine);
+    const results = ((resultRes.data ?? []) as { test_name: string; result_text: string }[])
+      .map((r) => ({ name: r.test_name, text: r.result_text }));
 
     const patient = patientRes.data as { name: string; age: number | null; gender: string | null } | null;
     const medName = new Map<number, string>(((medRes.data ?? []) as { id: number; name: string }[]).map((m) => [m.id, m.name]));
@@ -214,9 +298,15 @@ serve(async (req) => {
         age: patient?.age ?? null,
         gender: patient?.gender ?? null,
       },
-      symptoms: ((sympRes.data ?? []) as { name: string }[]).map((x) => x.name).filter(Boolean),
-      findings: ((findRes.data ?? []) as { name: string }[]).map((x) => x.name).filter(Boolean),
+      symptoms,
+      findings,
       diagnosisText: rx.findings_text ?? null,
+      // Structured, with place and details: the page prefers these to
+      // `diagnosisText` when there are any.
+      assessments,
+      results,
+      procedures,
+      exercises,
       vitals: (visit.vitals && typeof visit.vitals === "object") ? visit.vitals : null,
       medicines: pmRows.map((pm) => ({
         name: medName.get(Number(pm.medicine_id)) ?? "Medicine",

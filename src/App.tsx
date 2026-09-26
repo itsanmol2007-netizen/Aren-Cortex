@@ -15,8 +15,11 @@ import { ExerciseSheet } from "./components/ExerciseSheet";
 import { fetchExerciseLibrary, setExerciseLibraryEntry, type ExerciseLibraryEntry } from "./lib/db/exerciseLibrary";
 import { clinicalSiteLabel, sameSite, siteFromLabel, siteFromRegionKey, type SiteRef } from "./lib/body/clinicalSite";
 import { siteSignalsOf } from "./lib/body/siteSignals";
-import type { OngoingAction, OngoingItem, OngoingLocal } from "./features/consult/ongoing";
-import { recordInvestigationResult, recordStateEvent } from "./lib/db/clinicalState";
+import { ongoingFrom, type OngoingAction, type OngoingItem, type OngoingLocal } from "./features/consult/ongoing";
+import { formatDue, formatLine as formatInterventionLine } from "./features/consult/interventionPlan";
+import { NV_CHECKS, NV_REGIONS, nvKey } from "./features/consult/NeurovascularCheck";
+import { dashText } from "./lib/clinicalText";
+import { recordInvestigationResult, recordStateEvent, STATUS_LABEL } from "./lib/db/clinicalState";
 import { ResultSheet, type ResultDraft } from "./features/consult/ResultSheet";
 import { searchIntents } from "./lib/db/synapse";
 import { PatientHeader } from "./components/PatientHeader";
@@ -1860,6 +1863,8 @@ function App() {
   useEffect(() => {
     setOngoingStates({ conditions: new Map(), plans: new Map() });
     setResultsToday(new Map());
+    setResultDrafts(new Map());
+    setResultSheetFor(null);
     setContinued(false);
   }, [patient?.id]);
   const ongoingLocal = useMemo<OngoingLocal>(() => ({
@@ -1868,6 +1873,33 @@ function App() {
     removedToday: new Set(interventionPlan.map((l) => l.removesId).filter(Boolean) as string[]),
     fulfilledToday: new Set(interventionPlan.map((l) => l.fulfilsId).filter(Boolean) as string[]),
   }), [ongoingStates, interventionPlan, resultsToday]);
+
+  // ── What the printed prescription (and so the WhatsApp page) carries
+  // beyond the chart: results read today, procedures split into done and
+  // planned, what continues from earlier visits, and a neurovascular check.
+  const printResults = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const v of meaningfulPastVisits) for (const o of v.orders ?? []) names.set(o.id, o.name);
+    return [...resultsToday].map(([id, text]) => ({ name: dashText(names.get(id) ?? "Investigation"), text }));
+  }, [resultsToday, meaningfulPastVisits]);
+
+  const printProcedures = useMemo(() => interventionPlan.map((l) => ({
+    // formatLine tags a planned line "[planned, due …]"; the print gives
+    // planned lines their own heading and due date instead.
+    text: l.text ? (l.notes.trim() ? `${l.text} (${l.notes.trim()})` : l.text) : formatInterventionLine(l),
+    status: (l.status ?? "performed") as "performed" | "planned",
+    due: l.dueDate ? formatDue(l.dueDate) : null,
+  })), [interventionPlan]);
+
+  const printContinuing = useMemo(() => {
+    const out: string[] = [];
+    for (const it of ongoingFrom(meaningfulPastVisits, ongoingLocal)) {
+      const what = `${it.title}${it.site ? ` - ${it.site}` : ""}`;
+      if (it.kind === "in-place" && !it.today) out.push(`${what}: keep on, ${it.status.toLowerCase()}`);
+      else if (it.kind === "condition" && it.state) out.push(`${what}: ${STATUS_LABEL[it.state].toLowerCase()}`);
+    }
+    return out;
+  }, [meaningfulPastVisits, ongoingLocal]);
 
   const handleOngoingAction = useCallback((item: OngoingItem, action: OngoingAction) => {
     const p = item.procedure;
@@ -2010,6 +2042,25 @@ function App() {
 
   /** Phase 3 examination state — layer 1, beside the story. */
   const examination = useExamination(visitId);
+
+  const printNeuro = useMemo(() => {
+    const out: { text: string; abnormal: boolean }[] = [];
+    for (const m of markedExam.sites) {
+      if (!NV_REGIONS.has(m.region)) continue;
+      const vals = NV_CHECKS.map((c) => examination.getText(nvKey(c.key, m.region), m.side));
+      if (vals.every((v) => !v)) continue;
+      const ref = siteFromRegionKey(m.region, m.side);
+      const where = ref ? clinicalSiteLabel(ref) : m.region;
+      const off = NV_CHECKS
+        .map((c, i) => (vals[i] && vals[i] !== c.normal ? `${c.label.toLowerCase()} ${vals[i]!.toLowerCase()}` : null))
+        .filter(Boolean);
+      out.push(off.length
+        ? { text: `Neurovascular: ${off.join(", ")} - ${where}`, abnormal: true }
+        : { text: `Neurovascular intact - ${where}`, abnormal: false });
+    }
+    return out;
+  }, [markedExam.sites, examination]);
+
 
   /**
    * The doctor's pins — the heart on a recommendation row.
@@ -3435,7 +3486,8 @@ function App() {
             hospital={hospitalProfile}
             vitals={vitals}
             symptoms={chart.symptomsForRecord}
-            findings={chart.findingsForRecord}
+            findings={[...chart.findingsForRecord, ...printNeuro.filter((n) => n.abnormal).map((n) => n.text)]}
+            examNotes={printNeuro.filter((n) => !n.abnormal).map((n) => n.text)}
             allFindings={findingsAsDb}
             prescription={prescription}
             tests={selectedTests}
@@ -3459,6 +3511,10 @@ function App() {
             adviceNotes={reviewAdvice}
             therapyNotes={therapyNotes}
             exerciseLines={exercisePlan.map(formatLine)}
+            diagnoses={diagnoses}
+            results={printResults}
+            procedures={printProcedures.length ? printProcedures : undefined}
+            continuingCare={printContinuing}
             storySummary={storySummaryLines}
             goalSummary={goalSummaryLines}
             visitId={visitId ?? undefined}

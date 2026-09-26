@@ -86,6 +86,14 @@ export interface PublicRxData {
     symptoms: string[];
     findings: string[];
     diagnosisText: string | null;
+    /** structured assessments with place and details (newer visits); preferred over diagnosisText */
+    assessments?: string[];
+    /** results of earlier investigations read at this visit */
+    results?: { name: string; text: string }[];
+    /** procedures done today, or planned with a due date (yyyy-mm-dd) */
+    procedures?: { text: string; status: "performed" | "planned"; due: string | null }[];
+    /** the home programme, one formatted line each */
+    exercises?: string[];
     vitals: Record<string, unknown> | null;
     medicines: PublicRxMedicine[];
     tests: string[];

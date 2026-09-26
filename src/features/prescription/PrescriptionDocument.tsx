@@ -67,6 +67,29 @@ export interface PrescriptionDocumentProps {
     therapyNotes?: string;
     /** the home programme, one formatted line each */
     exerciseLines?: string[];
+    /**
+     * What the doctor judged it to be, one line each, with the place and
+     * the details the Assessment card composed: "Fracture - Left wrist,
+     * distal radius, displaced, dorsal angulation". Kept apart from
+     * findings: what was found is not what it was judged to be.
+     */
+    diagnoses?: string[];
+    /** investigations whose results were read at this visit */
+    results?: { name: string; text: string }[];
+    /**
+     * Today's procedures, split by whether they were done or are planned.
+     * When given, this replaces `therapyNotes`' single mixed list (which
+     * filed "Cast removal, due 3 Oct" under therapy performed).
+     */
+    procedures?: { text: string; status: "performed" | "planned"; due?: string | null }[];
+    /** what continues from earlier visits: "POP cast - Right wrist: keep on (in place 1 week)" */
+    continuingCare?: string[];
+    /**
+     * Normal examination, documented: "Neurovascular intact - Left wrist".
+     * Printed in the findings card in plain ink: a check that came back
+     * normal is a record, not the red warning an abnormal finding is.
+     */
+    examNotes?: string[];
     doctor?: DoctorShape | null;
     hospital?: DBHospital | null;
     vitals?: Vitals;
@@ -171,6 +194,11 @@ function StandardDocument({
     adviceNotes,
     therapyNotes,
     exerciseLines = [],
+    diagnoses = [],
+    results = [],
+    procedures,
+    continuingCare = [],
+    examNotes = [],
     doctor,
     hospital,
     vitals,
@@ -532,7 +560,7 @@ function StandardDocument({
             )}
 
             {/* ── Complaints & Findings ── */}
-            {(symptoms.length > 0 || findings.length > 0) && (
+            {(symptoms.length > 0 || findings.length > 0 || examNotes.length > 0) && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                     {symptoms.length > 0 && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
@@ -544,7 +572,7 @@ function StandardDocument({
                             ))}
                         </div>
                     )}
-                    {findings.length > 0 && (
+                    {(findings.length > 0 || examNotes.length > 0) && (
                         <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
                             <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                                 {t.findings}
@@ -552,8 +580,55 @@ function StandardDocument({
                             {findings.map((f) => (
                                 <div key={f} style={{ fontSize: bodySize, color: "#c0392b", marginBottom: 2 }}>⚠ {f}</div>
                             ))}
+                            {examNotes.map((f) => (
+                                <div key={f} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>✓ {f}</div>
+                            ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Assessment ── what it was judged to be, with its place and
+                details, set apart from what was found. The accent edge is
+                what makes it read as the conclusion of the two cards above. */}
+            {diagnoses.length > 0 && (
+                <div style={{
+                    border: "1px solid #e5e7eb", borderLeft: `3px solid ${accentColor}`, borderRadius: 6,
+                    padding: "6px 10px", marginBottom: 10, background: rx.veil,
+                }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.assessment}
+                    </div>
+                    {diagnoses.map((d) => (
+                        <div key={d} style={{ fontSize: bodySize, color: "#111", fontWeight: 700, marginBottom: 2 }}>{d}</div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Investigation results read today ── */}
+            {results.length > 0 && (
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.results}
+                    </div>
+                    {results.map((r) => (
+                        <div key={r.name} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>
+                            <span style={{ fontWeight: 700, color: "#111" }}>{r.name}:</span> {r.text}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Continuing care ── what the patient already carries from
+                earlier visits, so the paper says "keep the cast on". */}
+            {continuingCare.length > 0 && (
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+                    <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                        {t.continuingCare}
+                    </div>
+                    {continuingCare.map((c) => (
+                        <div key={c} style={{ fontSize: bodySize, color: "#333", marginBottom: 2 }}>• {c}</div>
+                    ))}
                 </div>
             )}
 
@@ -710,7 +785,33 @@ function StandardDocument({
                 {/* What the clinic did today, above what the patient takes
                     home. A physiotherapy session largely consists of these and
                     printing them under "Instructions" would misfile them. */}
-                {therapyNotes && (
+                {procedures && procedures.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                        {procedures.some((p) => p.status === "performed") && (
+                            <>
+                                <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                                    {t.doneToday}
+                                </div>
+                                {procedures.filter((p) => p.status === "performed").map((p, i) => (
+                                    <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>› {p.text}</div>
+                                ))}
+                            </>
+                        )}
+                        {procedures.some((p) => p.status === "planned") && (
+                            <>
+                                <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", margin: "6px 0 4px" }}>
+                                    {t.plannedNext}
+                                </div>
+                                {procedures.filter((p) => p.status === "planned").map((p, i) => (
+                                    <div key={i} style={{ fontSize: smallSize, color: "#444", marginBottom: 2 }}>
+                                        › {p.text}{p.due && <b style={{ color: rx.ink }}> · {t.dueOn(p.due)}</b>}
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </div>
+                )}
+                {!procedures && therapyNotes && (
                     <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: smallSize, fontWeight: 700, color: rx.ink, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                             {t.therapyPerformed}
@@ -867,6 +968,11 @@ function ThermalDocument({
     adviceNotes,
     therapyNotes,
     exerciseLines = [],
+    diagnoses = [],
+    results = [],
+    procedures,
+    continuingCare = [],
+    examNotes = [],
     doctor,
     hospital,
     date,
@@ -954,10 +1060,33 @@ function ThermalDocument({
             )}
 
             {/* Findings */}
-            {findings.length > 0 && (
+            {(findings.length > 0 || examNotes.length > 0) && (
                 <>
                     <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.findings}</div>
                     {findings.map((f) => <div key={f} style={th}>! {f}</div>)}
+                    {examNotes.map((f) => <div key={f} style={th}>- {f}</div>)}
+                    {divider}
+                </>
+            )}
+
+            {diagnoses.length > 0 && (
+                <>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.assessment}</div>
+                    {diagnoses.map((d) => <div key={d} style={{ ...th, fontWeight: 700 }}>{d}</div>)}
+                    {divider}
+                </>
+            )}
+            {results.length > 0 && (
+                <>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.results}</div>
+                    {results.map((r) => <div key={r.name} style={th}><b>{r.name}:</b> {r.text}</div>)}
+                    {divider}
+                </>
+            )}
+            {continuingCare.length > 0 && (
+                <>
+                    <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", marginBottom: 2 }}>{t.continuingCare}</div>
+                    {continuingCare.map((c) => <div key={c} style={th}>- {c}</div>)}
                     {divider}
                 </>
             )}
@@ -1012,7 +1141,21 @@ function ThermalDocument({
             )}
 
             {/* Therapy, then follow-up + advice. Thermal format. */}
-            {therapyNotes && (
+            {procedures && procedures.length > 0 && (
+                <>
+                    {procedures.filter((p) => p.status === "performed").map((p, i) => (
+                        <div key={`d${i}`} style={th}>+ {p.text}</div>
+                    ))}
+                    {procedures.some((p) => p.status === "planned") && (
+                        <div style={{ fontWeight: 700, fontSize: "8px", textTransform: "uppercase", margin: "3px 0 2px" }}>{t.plannedNext}</div>
+                    )}
+                    {procedures.filter((p) => p.status === "planned").map((p, i) => (
+                        <div key={`p${i}`} style={th}>&gt; {p.text}{p.due ? ` (${t.dueOn(p.due)})` : ""}</div>
+                    ))}
+                    {divider}
+                </>
+            )}
+            {!procedures && therapyNotes && (
                 <>
                     {therapyNotes.split("\n").filter(Boolean).map((line, i) => (
                         <div key={i} style={th}>+ {line}</div>

@@ -93,6 +93,12 @@ interface ReviewModalProps {
   therapyNotes?: string;
   /** the home programme, one formatted line each */
   exerciseLines?: string[];
+  /** the assessment, results read today, procedures and continuing care — see PrescriptionDocument */
+  diagnoses?: string[];
+  results?: { name: string; text: string }[];
+  procedures?: { text: string; status: "performed" | "planned"; due?: string | null }[];
+  continuingCare?: string[];
+  examNotes?: string[];
   /** how the symptom behaves — pre-formatted lines, physiotherapy Phase 1.
    *  Doctor-facing review only, per plan §5 — never printed on the Rx. */
   storySummary?: string[];
@@ -223,7 +229,7 @@ export default function ReviewModal({
   patient, visitId, prescriptionRef,
   symptoms = [], findings = [], allFindings = [],
   prescription = [], tests = [],
-  followUpDays, adviceNotes, therapyNotes, exerciseLines = [],
+  followUpDays, adviceNotes, therapyNotes, exerciseLines = [], diagnoses, results, procedures, continuingCare, examNotes,
   storySummary = [], goalSummary = [],
   doctor, hospital, vitals, isSaving, saveLabel, sent = false,
   whatsappPhase = "idle", whatsappError, seedCharges,
@@ -616,6 +622,11 @@ export default function ReviewModal({
             adviceNotes={adviceNotes}
             therapyNotes={therapyNotes}
             exerciseLines={exerciseLines}
+            diagnoses={diagnoses}
+            results={results}
+            procedures={procedures}
+            continuingCare={continuingCare}
+            examNotes={examNotes}
             doctor={doctor}
             hospital={hospital}
             vitals={vitals}
@@ -733,6 +744,11 @@ export default function ReviewModal({
                   adviceNotes={adviceNotes}
                   therapyNotes={therapyNotes}
                   exerciseLines={exerciseLines}
+                  diagnoses={diagnoses}
+                  results={results}
+                  procedures={procedures}
+                  continuingCare={continuingCare}
+                  examNotes={examNotes}
                   doctor={doctor}
                   hospital={hospital}
                   vitals={vitals}

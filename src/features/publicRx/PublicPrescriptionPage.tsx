@@ -22,6 +22,7 @@ import { useParams } from "react-router-dom";
 import {
     Sunrise, Sun, Sunset, Moon, Utensils, UtensilsCrossed,
     Pill, ClipboardList, CalendarClock, Stethoscope, ShieldAlert, IndianRupee,
+    FlaskConical, Bandage, Dumbbell,
 } from "lucide-react";
 import { fetchPublicPrescription, type PublicRxData, type PublicRxMedicine, type PublicRxBilling } from "./api";
 import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage } from "../../lib/i18n/prescriptionLabels";
@@ -33,6 +34,7 @@ import { rxLabels, localizeTiming, RX_LANGUAGE_OPTIONS, hiName, type RxLanguage 
 // and some SVG and all for all kind of users" — for every language, not
 // only the English typography pass done separately.
 import { RxMonogram, RxWatermark } from "../../components/RxMarks";
+import { dashText } from "../../lib/clinicalText";
 
 type SlotKey = "M" | "A" | "E" | "N";
 
@@ -146,6 +148,8 @@ const SECTION_TONE = {
     purple: "bg-purple-100 text-purple-700",
     amber: "bg-amber-100 text-amber-700",
     emerald: "bg-emerald-100 text-emerald-700",
+    teal: "bg-teal-100 text-teal-700",
+    violet: "bg-violet-100 text-violet-700",
 } as const;
 
 const BILLING_LABELS: Record<RxLanguage, {
@@ -377,7 +381,14 @@ export function PublicPrescriptionPage() {
     if (state.phase === "loading") return <Skeleton />;
     if (state.phase === "error") return <ErrorScreen />;
 
-    const { rx } = state;
+    // Lines saved before 2026-09-25 carry an em dash ("Fracture — Right
+    // knee"); the page speaks the consult's current form, " - ".
+    const rx = {
+        ...state.rx,
+        assessments: state.rx.assessments?.map(dashText),
+        procedures: state.rx.procedures?.map((p) => ({ ...p, text: dashText(p.text) })),
+        results: state.rx.results?.map((r) => ({ name: dashText(r.name), text: dashText(r.text) })),
+    };
     const labels = rxLabels(language);
 
     // `rx.diagnosisText` is `findings_text` on the `prescriptions` row — a
@@ -499,10 +510,33 @@ export function PublicPrescriptionPage() {
                             {rx.findings.length > 0 && (
                                 <ClinicalLine label={labels.findings} text={rx.findings.join(", ")} alert />
                             )}
-                            {assessmentText && (
+                            {/* Structured assessments (with place and details)
+                                when the visit has them; the older blended
+                                text otherwise. Set apart as the conclusion. */}
+                            {rx.assessments?.length ? (
+                                <div className="mt-2 rounded-xl border-l-4 border-violet-500 bg-violet-50 px-3 py-2">
+                                    <p className="mb-0.5 text-[10px] font-black uppercase tracking-wide text-violet-500">{labels.assessment}</p>
+                                    {rx.assessments.map((a, i) => (
+                                        <p key={i} className={`text-sm ${boldWeight} leading-snug text-violet-950`}>{a}</p>
+                                    ))}
+                                </div>
+                            ) : assessmentText ? (
                                 <ClinicalLine label={labels.assessment} text={assessmentText} />
-                            )}
+                            ) : null}
                         </div>
+                    </Section>
+                ) : null}
+
+                {rx.results?.length ? (
+                    <Section icon={FlaskConical} title={labels.results} bold={boldWeight} tone="teal">
+                        <ul className="space-y-2 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.results.map((r, i) => (
+                                <li key={i} className="text-sm leading-relaxed">
+                                    <span className={`block ${boldWeight} text-slate-900`}>{r.name}</span>
+                                    <span className="font-medium text-slate-700">{r.text}</span>
+                                </li>
+                            ))}
+                        </ul>
                     </Section>
                 ) : null}
 
@@ -536,6 +570,46 @@ export function PublicPrescriptionPage() {
                                 <li key={i} className="text-sm font-semibold text-slate-800">• {t}</li>
                             ))}
                         </ul>
+                    </Section>
+                ) : null}
+
+                {rx.procedures?.length ? (
+                    <Section icon={Bandage} title={labels.therapyPerformed} bold={boldWeight} tone="teal">
+                        <div className="space-y-3 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.procedures.some((p) => p.status === "performed") && (
+                                <div>
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">{labels.doneToday}</p>
+                                    {rx.procedures.filter((p) => p.status === "performed").map((p, i) => (
+                                        <p key={i} className="text-sm font-semibold text-slate-800">• {p.text}</p>
+                                    ))}
+                                </div>
+                            )}
+                            {rx.procedures.some((p) => p.status === "planned") && (
+                                <div>
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">{labels.plannedNext}</p>
+                                    {rx.procedures.filter((p) => p.status === "planned").map((p, i) => (
+                                        <p key={i} className="flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-slate-800">
+                                            <span>• {p.text}</span>
+                                            {p.due && (
+                                                <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-bold text-teal-700">
+                                                    {labels.dueOn(new Date(`${p.due}T00:00:00`).toLocaleDateString(language === "en" ? "en-IN" : "hi-IN", { day: "numeric", month: "short" }))}
+                                                </span>
+                                            )}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </Section>
+                ) : null}
+
+                {rx.exercises?.length ? (
+                    <Section icon={Dumbbell} title={labels.homeExercise} bold={boldWeight} tone="emerald">
+                        <ol className="space-y-1.5 rounded-2xl border-2 border-slate-200 bg-white p-4">
+                            {rx.exercises.map((e, i) => (
+                                <li key={i} className="text-sm font-semibold text-slate-800">{i + 1}. {e}</li>
+                            ))}
+                        </ol>
                     </Section>
                 ) : null}
 

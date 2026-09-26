@@ -81,6 +81,16 @@ export interface RxLabels {
     advice: string;
     therapyPerformed: string;
     homeExercise: string;
+    /** results of investigations that came back and were read at this visit */
+    results: string;
+    /** procedures done in the clinic today (cast applied, sutures removed) */
+    doneToday: string;
+    /** procedures planned for a later date */
+    plannedNext: string;
+    /** what continues from earlier visits: a cast still on, a fracture healing */
+    continuingCare: string;
+    /** "3 Oct" -> "due 3 Oct" / the localised equivalent */
+    dueOn: (date: string) => string;
     /** The printed billing section's own heading — see PrescriptionDocument's
      *  Billing block. Separate from `measurements`'s "reading" sense even
      *  though both are short catch-all nouns; this one is money. */
@@ -159,6 +169,11 @@ const en: RxLabels = {
     advice: "Advice",
     therapyPerformed: "Therapy Performed",
     homeExercise: "Home Exercise Programme",
+    results: "Investigation Results",
+    doneToday: "Done Today",
+    plannedNext: "Planned Next",
+    continuingCare: "Continuing Care",
+    dueOn: (d) => `due ${d}`,
     billing: "Billing",
     consultationFee: "Consultation Fee",
     medicineCharge: "Medicine Charges",
@@ -195,6 +210,11 @@ const hi: RxLabels = {
     advice: "सलाह",
     therapyPerformed: "आज की थेरेपी",
     homeExercise: "घर पर करने वाली एक्सरसाइज़",
+    results: "जांच के नतीजे",
+    doneToday: "आज किया गया",
+    plannedNext: "आगे की योजना",
+    continuingCare: "जारी देखभाल",
+    dueOn: (d) => `${d} तक`,
     billing: "बिल",
     consultationFee: "परामर्श शुल्क",
     medicineCharge: "दवाई का शुल्क",
@@ -236,6 +256,11 @@ const hiLatn: RxLabels = {
     advice: "Advice",
     therapyPerformed: "Aaj ki Therapy",
     homeExercise: "Ghar par karne wali Exercise",
+    results: "Jaanch ke Nateeje",
+    doneToday: "Aaj kiya gaya",
+    plannedNext: "Aage ki Yojana",
+    continuingCare: "Jaari Dekhbhaal",
+    dueOn: (d) => `${d} tak`,
     billing: "Bill",
     consultationFee: "Consultation Fee",
     medicineCharge: "Dawai ka Charge",
